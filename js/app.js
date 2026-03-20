@@ -887,29 +887,40 @@ function bindTheme() {
 function toggleTheme() {
   window.IS_DARK = !window.IS_DARK;
   const theme = window.IS_DARK ? 'dark' : 'light';
+  applyTheme(theme);
+  try { localStorage.setItem('fi_theme', theme); } catch(e) {}
+}
+
+function applyTheme(theme) {
+  const isDark = theme === 'dark';
   document.documentElement.setAttribute('data-theme', theme);
 
-  // Update all theme toggle buttons
-  const icon = window.IS_DARK ? '☀️' : '🌙';
-  document.getElementById('theme-toggle')     && (document.getElementById('theme-toggle').textContent     = icon);
-  document.getElementById('theme-toggle-mob') && (document.getElementById('theme-toggle-mob').textContent = icon);
-  document.getElementById('mob-theme-btn')    && (document.getElementById('mob-theme-btn').textContent    = icon);
+  // iOS Safari fix — directly set critical colors on body
+  if (isDark) {
+    document.body.style.backgroundColor = '#0a0a0f';
+    document.body.style.color           = '#e8e8f5';
+  } else {
+    document.body.style.backgroundColor = '#f4f4f8';
+    document.body.style.color           = '#1a1a2e';
+  }
 
-  // Force iOS Safari repaint
+  // Update all toggle buttons
+  const icon = isDark ? '☀️' : '🌙';
+  ['theme-toggle','theme-toggle-mob','mob-theme-btn'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = icon;
+  });
+
+  // Force repaint on iOS
   document.body.style.display = 'none';
-  document.body.offsetHeight; // trigger reflow
+  document.body.offsetHeight;
   document.body.style.display = '';
-
-  // Save preference
-  try { localStorage.setItem('fi_theme', theme); } catch(e) {}
 }
 
 function loadSavedTheme() {
   try {
-    const saved = localStorage.getItem('fi_theme');
-    if (saved) {
-      window.IS_DARK = saved === 'dark';
-      document.documentElement.setAttribute('data-theme', saved);
-    }
+    const saved = localStorage.getItem('fi_theme') || 'light';
+    window.IS_DARK = saved === 'dark';
+    applyTheme(saved);
   } catch(e) {}
 }
