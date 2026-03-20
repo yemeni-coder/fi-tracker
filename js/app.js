@@ -233,12 +233,18 @@ function applyRoleUI() {
   const switchBtn = document.getElementById('organizer-switch-btn');
   if (switchBtn) switchBtn.style.display = isAdmin ? '' : 'none';
 
-  // Nav identity — same style as other nav items
+  // Nav identity — greeting for viewers, name for admins
   const badge = document.getElementById('role-badge');
   if (badge) {
     const name = window.CURRENT_USER_NAME || (isAdmin ? 'Admin' : 'Viewer');
-    badge.textContent = isAdmin ? `${name} · Admin` : `${name} · Viewer`;
-    badge.title       = window.CURRENT_USER_EMAIL;
+    if (isAdmin) {
+      badge.textContent = `${name} · Admin`;
+    } else {
+      const hour     = new Date().getHours();
+      const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+      badge.textContent = `${greeting}, ${name} 👋`;
+    }
+    badge.title = window.CURRENT_USER_EMAIL;
   }
 
   // Bind dropdown Add button
@@ -255,25 +261,40 @@ function updateMobileHeader() {
   const isAdmin = window.USER_ROLE === 'admin';
   const name    = window.CURRENT_USER_NAME || '';
 
-  // Name
+  // Name — with greeting for viewers
   const mobName = document.getElementById('mob-name');
-  if (mobName) mobName.textContent = name;
-
-  // Switch button — admin only, completely hidden for viewers
-  const mobSwitch = document.getElementById('mob-switch-btn');
-  if (mobSwitch) {
-    mobSwitch.style.display = isAdmin ? '' : 'none';
-    // Use onclick to avoid stacking multiple listeners
-    if (isAdmin) {
-      mobSwitch.onclick = openOrganizerSwitch;
+  if (mobName) {
+    if (!isAdmin && name) {
+      const hour     = new Date().getHours();
+      const greeting = hour < 12 ? 'Morning' : hour < 17 ? 'Afternoon' : 'Evening';
+      mobName.textContent = `${greeting}, ${name} 👋`;
     } else {
-      mobSwitch.onclick = null;
+      mobName.textContent = name;
     }
   }
 
-  // Bind mobile theme — use onclick
+  // Switch button — admin only
+  const mobSwitch = document.getElementById('mob-switch-btn');
+  if (mobSwitch) {
+    mobSwitch.style.display = isAdmin ? '' : 'none';
+    mobSwitch.onclick = isAdmin ? openOrganizerSwitch : null;
+  }
+
+  // Theme toggle
   const mobTheme = document.getElementById('theme-toggle-mob');
   if (mobTheme) mobTheme.onclick = toggleTheme;
+
+  // Logout button
+  const mobLogout = document.getElementById('logout-btn-mob');
+  if (mobLogout) {
+    mobLogout.onclick = async () => {
+      if (!confirm('Sign out?')) return;
+      await authSignOut();
+      window.ALL_COMPANIES = [];
+      window.ALL_COUNTRIES = [];
+      showLogin();
+    };
+  }
 }
 
 function updateMobileSwitchLabel() {

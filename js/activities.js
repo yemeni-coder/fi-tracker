@@ -7,7 +7,7 @@
 
 /* ════════════════════════════════════════════════
    RENDER ACTIVITIES PAGE
-════════════════════════════════════════════════ */
+════════════════════════════════════════════════ *
 async function renderActivitiesPage() {
   const content = document.getElementById('activities-page-content');
   if (!content) return;
