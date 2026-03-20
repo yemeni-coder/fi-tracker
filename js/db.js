@@ -232,6 +232,7 @@ async function dbDeleteObservation(id) {
 }
 
 async function dbGetPendingObservationCount() {
+  // Count ALL pending — both real observations and unapproved visitor logins
   const rows = await sbFetch('observations?select=id&status=eq.pending');
   return rows?.length || 0;
 }

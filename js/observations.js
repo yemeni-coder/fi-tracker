@@ -234,11 +234,9 @@ async function loadInboxTab(tab) {
     if (tab === 'mine') {
       observations = await dbGetMyObservations(window.CURRENT_USER_EMAIL);
     } else if (tab === 'visitors') {
-      // Show all viewer access logs
+      // Show ALL viewer access logs (pending + approved)
       const all = await dbGetObservations(null);
-      observations = all.filter(o =>
-        o.user_role === 'viewer' && o.note && o.note.includes('accessed the system')
-      );
+      observations = all.filter(o => o.note && o.note.includes('accessed the system'));
     } else {
       // For pending/reviewed, exclude access logs - show only real observations
       const all = await dbGetObservations(tab === 'pending' ? 'pending' : 'reviewed');
@@ -262,7 +260,51 @@ async function loadInboxTab(tab) {
     }
 
     if (tab === 'visitors') {
-    content.innerHTML = observations.map(obs => buildVisitorCard(obs)).join('');
+    const pending  = observations.filter(o => o.status === 'pending');
+    const approved = observations.filter(o => o.status === 'reviewed');
+
+    content.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+        <div style="font-size:12px;color:var(--tx3)">
+          ${pending.length} new · ${approved.length} approved
+        </div>
+        <button class="btn btn-ghost" id="clear-visitors-btn"
+          style="font-size:12px;color:var(--danger);padding:6px 12px">
+          🗑 Delete All
+        </button>
+      </div>
+      ${observations.length === 0
+        ? '<div class="empty-state" style="padding:30px"><div class="empty-icon">👁</div><p>No visitors yet</p></div>'
+        : observations.map(obs => buildVisitorCard(obs)).join('')}`;
+
+    // Approve buttons
+    content.querySelectorAll('.visitor-approve-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        await dbReviewObservation(+btn.dataset.id, null, window.CURRENT_USER_EMAIL);
+        showToast('✓ Visitor approved');
+        await loadInboxTab('visitors');
+        updatePendingBadge();
+      });
+    });
+
+    // Delete individual
+    content.querySelectorAll('.visitor-delete-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        await dbDeleteObservation(+btn.dataset.id);
+        showToast('🗑 Removed');
+        await loadInboxTab('visitors');
+        updatePendingBadge();
+      });
+    });
+
+    // Clear all
+    document.getElementById('clear-visitors-btn')?.addEventListener('click', async () => {
+      if (!confirm(`Delete all ${observations.length} visitor logs?`)) return;
+      for (const obs of observations) await dbDeleteObservation(obs.id);
+      showToast('✓ All visitor logs deleted');
+      await loadInboxTab('visitors');
+      updatePendingBadge();
+    });
     return;
   }
   content.innerHTML = observations.map(obs => buildObsCard(obs, tab)).join('');
@@ -404,23 +446,37 @@ function openReviewForm(obsId) {
 }
 
 function buildVisitorCard(obs) {
-  const name = obs.user_email || '—';
-  const time = formatObsTime(obs.created_at);
-  const date = new Date(obs.created_at).toLocaleDateString('en-GB', {
+  const name     = obs.user_email || '—';
+  const date     = new Date(obs.created_at).toLocaleDateString('en-GB', {
     day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit'
   });
+  const approved = obs.status === 'reviewed';
+
   return `
-    <div class="obs-card">
+    <div class="obs-card" style="${approved ? 'opacity:0.6' : ''}">
       <div class="obs-card-head">
         <div style="display:flex;align-items:center;gap:8px">
-          <div style="width:32px;height:32px;border-radius:50%;background:var(--ok)22;border:1px solid var(--ok)55;
-            display:flex;align-items:center;justify-content:center;font-size:14px">👁</div>
+          <div style="width:32px;height:32px;border-radius:50%;
+            background:${approved ? 'var(--ok)' : 'var(--ac-soft)'};
+            border:1px solid ${approved ? 'var(--ok)' : 'var(--accent)'};
+            display:flex;align-items:center;justify-content:center;font-size:14px">
+            ${approved ? '✓' : '👁'}
+          </div>
           <div>
             <div style="font-size:13px;font-weight:500">${name}</div>
             <div style="font-size:11px;color:var(--tx3)">${date}</div>
           </div>
         </div>
-        <span style="font-size:11px;padding:2px 8px;border-radius:20px;background:var(--ok-soft);color:var(--ok)">Viewer</span>
+        <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+          ${approved
+            ? `<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:var(--ok-soft);color:var(--ok)">✓ Approved</span>`
+            : `<button class="btn btn-ghost visitor-approve-btn" data-id="${obs.id}"
+                style="font-size:11px;padding:4px 10px;color:var(--ok);border-color:var(--ok)">
+                ✓ Approve
+               </button>`}
+          <button class="panel-btn visitor-delete-btn" data-id="${obs.id}"
+            style="width:26px;height:26px;font-size:11px;color:var(--danger)">✕</button>
+        </div>
       </div>
     </div>`;
 }
