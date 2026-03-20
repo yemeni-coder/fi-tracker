@@ -1,0 +1,915 @@
+/* ════════════════════════════════════════════════
+   js/app.js
+════════════════════════════════════════════════ */
+
+window.ALL_COMPANIES        = [];
+window.ALL_COUNTRIES        = [];
+window.COUNTRY_LINKS        = [];
+window.USER_ROLE            = 'viewer';
+window.CURRENT_USER_EMAIL   = '';
+window.LOGIN_MODE           = 'admin'; // 'admin' | 'viewer'
+window.CURRENT_USER_NAME    = '';
+window.CURRENT_VIEW         = 'grid';
+window.CURRENT_PAGE         = 'companies';
+window.IS_DARK              = false;
+window.ACTIVE_SIDE          = 'tracker'; // 'tracker' | 'workspace'
+window.LOGIN_TYPE           = 'admin'; // 'admin' | 'viewer'
+
+const TX_TYPES   = ['Cash','Bank Transfer','Mobile Wallet','Card','SWIFT','ACH','Airtime','Home Delivery','Wire'];
+const CURRENCIES = ['TRY','EUR','USD','GBP','AED','SAR','CHF','JPY','CAD','AUD'];
+const SEGMENTS   = ['C2C','B2C','B2B','C2B','G2C','C2G'];
+const DIRECTIONS = [
+  { value: 'send',    label: '→ Send only'    },
+  { value: 'receive', label: '← Receive only' },
+  { value: 'both',    label: '⇄ Both ways'    }
+];
+
+/* ════════════════════════════════════════════════
+   AUTH
+════════════════════════════════════════════════ */
+async function authSignIn(email, password) {
+  const res = await fetch(`${CONFIG.SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+    method: 'POST',
+    headers: { 'apikey': CONFIG.SUPABASE_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password })
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error_description || data.msg || 'Login failed');
+  return data;
+}
+
+async function authGetSession() {
+  const stored = localStorage.getItem('fi_session');
+  if (!stored) return null;
+  const session = JSON.parse(stored);
+  const res = await fetch(`${CONFIG.SUPABASE_URL}/auth/v1/user`, {
+    headers: { 'apikey': CONFIG.SUPABASE_KEY, 'Authorization': `Bearer ${session.access_token}` }
+  });
+  if (!res.ok) { localStorage.removeItem('fi_session'); return null; }
+  return { ...session, user: await res.json() };
+}
+
+async function authSignOut() {
+  const stored = localStorage.getItem('fi_session');
+  if (stored) {
+    const session = JSON.parse(stored);
+    await fetch(`${CONFIG.SUPABASE_URL}/auth/v1/logout`, {
+      method: 'POST',
+      headers: { 'apikey': CONFIG.SUPABASE_KEY, 'Authorization': `Bearer ${session.access_token}` }
+    }).catch(() => {});
+  }
+  localStorage.removeItem('fi_session');
+}
+
+/* ════════════════════════════════════════════════
+   INIT
+════════════════════════════════════════════════ */
+document.addEventListener('DOMContentLoaded', async () => {
+  loadSavedTheme();
+  bindTheme();
+  bindLogin();
+  const session = await authGetSession();
+  if (session) {
+    const profile             = await dbGetUserProfile(session.user.id).catch(() => ({ role:'viewer', display_name:null }));
+    window.USER_ROLE          = profile.role || 'viewer';
+    window.CURRENT_USER_NAME  = profile.display_name || '';
+    window.CURRENT_USER_EMAIL = session.user.email || '';
+    showApp();
+  } else {
+    showLogin();
+  }
+});
+
+/* ════════════════════════════════════════════════
+   LOGIN
+════════════════════════════════════════════════ */
+/* ── Login type selector ── */
+function selectLoginType(type) {
+  window.LOGIN_TYPE = type;
+
+  // Update buttons
+  document.getElementById('type-admin').classList.toggle('active', type==='admin');
+  document.getElementById('type-viewer').classList.toggle('active', type==='viewer');
+
+  // Show/hide viewer name field
+  const nameWrap = document.getElementById('viewer-name-wrap');
+  if (nameWrap) nameWrap.style.display = type==='viewer' ? '' : 'none';
+
+  // Update submit button text
+  const btnText = document.getElementById('login-btn-text');
+  if (btnText) btnText.textContent = type==='admin' ? 'Sign In as Admin' : 'Sign In as Viewer';
+}
+
+function bindLogin() {
+  document.getElementById('login-btn').addEventListener('click', handleLogin);
+  ['login-email','login-password','login-name'].forEach(id => {
+    document.getElementById(id)?.addEventListener('keydown', e => { if (e.key==='Enter') handleLogin(); });
+  });
+
+  // Password eye toggle
+  document.getElementById('toggle-password')?.addEventListener('click', () => {
+    const input   = document.getElementById('login-password');
+    const eyeIcon = document.getElementById('eye-icon');
+    const isHidden = input.type === 'password';
+    input.type = isHidden ? 'text' : 'password';
+    eyeIcon.innerHTML = isHidden
+      ? '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/>'
+      : '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';
+  });
+}
+
+
+
+async function handleLogin() {
+  const email    = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  const errorEl  = document.getElementById('login-error');
+  const btn      = document.getElementById('login-btn');
+  // For viewers, name is required
+  if (window.LOGIN_TYPE === 'viewer') {
+    const name = document.getElementById('login-name')?.value.trim();
+    if (!name) { errorEl.textContent='Please enter your name.'; return; }
+  }
+  if (!email||!password) { errorEl.textContent='Please enter your email and password.'; return; }
+
+  btn.textContent='Signing in…'; btn.disabled=true; errorEl.textContent='';
+  try {
+    const session = await authSignIn(email, password);
+    localStorage.setItem('fi_session', JSON.stringify({
+      access_token: session.access_token, refresh_token: session.refresh_token
+    }));
+    const profile    = await dbGetUserProfile(session.user.id).catch(() => ({ role:'viewer', display_name:null }));
+    const actualRole = profile.role || 'viewer';
+
+    // BLOCK: viewer trying to use admin panel — sign out immediately
+    if (window.LOGIN_TYPE === 'admin' && actualRole !== 'admin') {
+      localStorage.removeItem('fi_session');
+      await authSignOut();
+      errorEl.textContent = 'You are not an admin or your credentials are incorrect.';
+      btn.textContent = 'Sign In as Admin';
+      btn.disabled = false;
+      return;
+    }
+
+    window.USER_ROLE          = actualRole;
+    window.CURRENT_USER_EMAIL = session.user.email || email;
+
+    if (actualRole === 'admin') {
+      window.CURRENT_USER_NAME = profile.display_name || '';
+    } else {
+      const viewerName = document.getElementById('login-name')?.value.trim() || '';
+      window.CURRENT_USER_NAME = viewerName || 'Viewer';
+      // Auto-log viewer access
+      dbAddObservation({
+        userEmail:   `${window.CURRENT_USER_NAME} (${window.CURRENT_USER_EMAIL})`,
+        userRole:    'viewer',
+        note:        `👁 Viewer accessed the system`,
+        companyId:   null,
+        companyName: null,
+        countryName: null
+      }).catch(() => {});
+    }
+
+    showApp();
+  } catch (err) {
+    errorEl.textContent = err.message || 'Incorrect email or password.';
+    btn.textContent='Sign In'; btn.disabled=false;
+  }
+}
+
+function showLogin() {
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('app').style.display = 'none';
+  selectLoginType('admin');
+  document.getElementById('login-name').value = '';
+  document.getElementById('login-email').value = '';
+  document.getElementById('login-password').value = '';
+  document.getElementById('login-error').textContent = '';
+  setTimeout(() => document.getElementById('login-email')?.focus(), 100);
+}
+
+async function showApp() {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+
+  // Always reset to tracker + companies on every login
+  window.ACTIVE_SIDE  = 'tracker';
+  window.CURRENT_PAGE = 'companies';
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-companies')?.classList.add('active');
+
+  applyRoleUI();
+  bindNavigation();
+  bindViewToggle();
+  bindSearch();
+  bindDetailPanel();
+  bindModal();
+  bindCountryModal();
+  bindLogout();
+  window.ALL_COUNTRIES = await dbGetAllCountries().catch(() => []);
+  await loadCompanies();
+  buildTopNav();
+  buildBottomNav();
+  initObservations();
+  bindWorkspace();
+  await loadAdmins();
+}
+
+/* ════════════════════════════════════════════════
+   ROLE UI
+════════════════════════════════════════════════ */
+function applyRoleUI() {
+  const isAdmin = window.USER_ROLE === 'admin';
+
+  // Mobile FAB — admin only
+  const fabMob = document.getElementById('add-btn-mob');
+  if (fabMob) fabMob.style.display = isAdmin ? '' : 'none';
+
+  // Dropdown Add button — admin only
+  const addWrap = document.getElementById('nav-add-wrap');
+  if (addWrap) addWrap.style.display = isAdmin ? '' : 'none';
+
+  // Switch to Organizer — admin only
+  const switchBtn = document.getElementById('organizer-switch-btn');
+  if (switchBtn) switchBtn.style.display = isAdmin ? '' : 'none';
+
+  // Nav identity — same style as other nav items
+  const badge = document.getElementById('role-badge');
+  if (badge) {
+    const name = window.CURRENT_USER_NAME || (isAdmin ? 'Admin' : 'Viewer');
+    badge.textContent = isAdmin ? `${name} · Admin` : `${name} · Viewer`;
+    badge.title       = window.CURRENT_USER_EMAIL;
+  }
+
+  // Bind dropdown Add button
+  bindAddDropdown();
+
+  // Bind switch button (desktop)
+  document.getElementById('organizer-switch-btn')?.addEventListener('click', openOrganizerSwitch);
+
+  // Update mobile header
+  updateMobileHeader();
+}
+
+function updateMobileHeader() {
+  const isAdmin = window.USER_ROLE === 'admin';
+  const name    = window.CURRENT_USER_NAME || '';
+
+  // Name
+  const mobName = document.getElementById('mob-name');
+  if (mobName) mobName.textContent = name;
+
+  // Switch button — admin only, completely hidden for viewers
+  const mobSwitch = document.getElementById('mob-switch-btn');
+  if (mobSwitch) {
+    mobSwitch.style.display = isAdmin ? '' : 'none';
+    // Use onclick to avoid stacking multiple listeners
+    if (isAdmin) {
+      mobSwitch.onclick = openOrganizerSwitch;
+    } else {
+      mobSwitch.onclick = null;
+    }
+  }
+
+  // Bind mobile theme — use onclick
+  const mobTheme = document.getElementById('theme-toggle-mob');
+  if (mobTheme) mobTheme.onclick = toggleTheme;
+}
+
+function updateMobileSwitchLabel() {
+  const btn  = document.getElementById('mob-switch-btn');
+  if (!btn) return;
+  if (window.ACTIVE_SIDE === 'workspace') {
+    btn.textContent = '⇄ FI Tracker';
+    btn.classList.add('organizer');
+  } else {
+    btn.textContent = '⇄ Workspace';
+    btn.classList.remove('organizer');
+  }
+}
+
+function bindAddDropdown() {
+  const btn      = document.getElementById('nav-add-btn');
+  const dropdown = document.getElementById('nav-add-dropdown');
+  if (!btn || !dropdown) return;
+
+  btn.addEventListener('click', e => {
+    e.stopPropagation();
+    dropdown.classList.toggle('open');
+  });
+
+  // Close on outside click — use capture to avoid interfering with other clicks
+  document.addEventListener('click', e => {
+    if (!btn.contains(e.target) && !dropdown.contains(e.target)) {
+      dropdown.classList.remove('open');
+    }
+  });
+
+  document.getElementById('add-btn')?.addEventListener('click', () => {
+    dropdown.classList.remove('open');
+    openAddModal();
+  });
+  document.getElementById('add-country-page-btn')?.addEventListener('click', () => {
+    dropdown.classList.remove('open');
+    openCountryModal();
+  });
+}
+
+function openOrganizerSwitch() {
+  if (window.ACTIVE_SIDE === 'workspace') {
+    switchToTracker();
+  } else {
+    switchToWorkspace();
+  }
+}
+
+function switchToWorkspace() {
+  if (window.USER_ROLE !== 'admin') return; // viewers cannot access workspace
+  window.ACTIVE_SIDE = 'workspace';
+  const btn = document.getElementById('organizer-switch-btn');
+  if (btn) {
+    btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg> FI Tracker`;
+    btn.style.borderColor = 'var(--ok)';
+    btn.style.color = 'var(--ok)';
+  }
+  buildTopNav();
+  buildBottomNav();
+  updateMobileSwitchLabel();
+  navigateTo('ws-desk');
+}
+
+function switchToTracker() {
+  window.ACTIVE_SIDE = 'tracker';
+  const btn = document.getElementById('organizer-switch-btn');
+  if (btn) {
+    btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg> FI Workspace`;
+    btn.style.borderColor = '';
+    btn.style.color = '';
+  }
+  buildTopNav();
+  buildBottomNav();
+  updateMobileSwitchLabel();
+  navigateTo('companies');
+}
+
+/* ════════════════════════════════════════════════
+   LOGOUT
+════════════════════════════════════════════════ */
+function bindLogout() {
+  document.getElementById('logout-btn')?.addEventListener('click', async () => {
+    if (!confirm('Sign out?')) return;
+    await authSignOut();
+    window.ALL_COMPANIES=[]; window.ALL_COUNTRIES=[];
+    showLogin();
+  });
+}
+
+/* ════════════════════════════════════════════════
+   NAVIGATION
+════════════════════════════════════════════════ */
+function bindNavigation() {
+  // Nav items are built dynamically — just build them now
+  buildTopNav();
+  buildBottomNav();
+}
+
+function buildBottomNav() {
+  const nav     = document.getElementById('botnav');
+  if (!nav) return;
+  const isAdmin = window.USER_ROLE === 'admin';
+  const page    = window.CURRENT_PAGE;
+  const side    = window.ACTIVE_SIDE;
+
+  const TRACKER_ITEMS = [
+    { page:'companies', label:'Companies', icon:'<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>' },
+    { page:'countries', label:'Countries', icon:'<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>' },
+    { page:'corridor',  label:'Corridor',  icon:'<polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>' },
+    { page:'dashboard', label:'Dashboard', icon:'<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>' }
+  ];
+
+  const WORKSPACE_ITEMS = [
+    { page:'ws-desk',      label:'My Desk',   icon:'<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>' },
+    { page:'ws-companies', label:'Companies', icon:'<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>' },
+    { page:'ws-log',       label:'Log',       icon:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>' },
+    { page:'ws-review',    label:'Review',    icon:'<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>' }
+  ];
+
+  const items = side === 'workspace' ? WORKSPACE_ITEMS : TRACKER_ITEMS;
+
+  nav.innerHTML = items.map(item => `
+    <button class="bot-btn ${page===item.page?'active':''}" data-page="${item.page}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${item.icon}</svg>
+      ${item.label}
+    </button>`).join('') + (isAdmin ? `
+    <button class="bot-btn fab" id="add-btn-mob">
+      <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Add
+    </button>` : '');
+
+  // Bind clicks
+  nav.querySelectorAll('[data-page]').forEach(btn => {
+    btn.addEventListener('click', () => navigateTo(btn.dataset.page));
+  });
+  document.getElementById('add-btn-mob')?.addEventListener('click', openFabMenu);
+}
+
+function buildTopNav() {
+  const nav  = document.getElementById('topnav-items');
+  if (!nav) return;
+  const side = window.ACTIVE_SIDE;
+  const page = window.CURRENT_PAGE;
+
+  const TRACKER = [
+    ['companies','Companies'],
+    ['countries','Countries'],
+    ['corridor','Corridor'],
+    ['dashboard','Dashboard']
+  ];
+  const WORKSPACE = [
+    ['ws-desk','My Desk'],
+    ['ws-companies','Companies'],
+    ['ws-log','Log'],
+    ['ws-review','Review']
+  ];
+
+  const items = side === 'workspace' ? WORKSPACE : TRACKER;
+  nav.innerHTML = items.map(([p, label]) =>
+    `<button class="nav-btn ${page===p?'active':''}" data-page="${p}">${label}</button>`
+  ).join('');
+
+  nav.querySelectorAll('[data-page]').forEach(btn => {
+    btn.addEventListener('click', () => navigateTo(btn.dataset.page));
+  });
+}
+
+function navigateTo(page) {
+  if (page===window.CURRENT_PAGE && page!=='companies') return;
+  window.CURRENT_PAGE = page;
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.getElementById(`page-${page}`)?.classList.add('active');
+  buildTopNav();
+  buildBottomNav();
+  if (page==='countries') renderCountries(document.getElementById('ct-search').value);
+  if (page==='dashboard') renderDashboard();
+  if (page==='corridor')    initCorridorPage();
+  if (page==='ws-desk')     renderMyDesk();
+  if (page==='ws-companies') { loadAdmins().then(() => renderWsCompanies()); }
+  if (page==='ws-log')      renderWsLog();
+  if (page==='ws-review')   initWsReview();
+}
+
+/* ════════════════════════════════════════════════
+   VIEW TOGGLE
+════════════════════════════════════════════════ */
+function bindViewToggle() {
+  document.querySelectorAll('.view-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      window.CURRENT_VIEW = btn.dataset.view;
+      document.querySelectorAll('.view-btn').forEach(b=>b.classList.toggle('active',b.dataset.view===window.CURRENT_VIEW));
+      renderCompanies();
+    });
+  });
+}
+
+/* ════════════════════════════════════════════════
+   SEARCH
+════════════════════════════════════════════════ */
+function bindSearch() {
+  document.getElementById('co-search').addEventListener('input', renderCompanies);
+  document.getElementById('filter-dir').addEventListener('change', renderCompanies);
+  document.getElementById('filter-country').addEventListener('change', renderCompanies);
+  document.getElementById('filter-status').addEventListener('change', renderCompanies);
+  document.getElementById('ct-search').addEventListener('input', e=>renderCountries(e.target.value));
+}
+
+/* ════════════════════════════════════════════════
+   CORRIDOR
+════════════════════════════════════════════════ */
+function initCorridorPage() {
+  const linkedCountries = [...new Map(
+    window.ALL_COMPANIES.flatMap(c=>(c.countries||[])).map(co=>[co.name,co])
+  ).values()].sort((a,b)=>a.name.localeCompare(b.name));
+
+  document.getElementById('corridor-to').innerHTML =
+    `<option value="">Select destination…</option>` +
+    linkedCountries.map(co=>`<option value="${co.name}">${co.flag} ${co.name}</option>`).join('');
+  document.getElementById('corridor-to').onchange = runCorridorSearch;
+  document.getElementById('corridor-results').innerHTML =
+    `<div class="empty-state"><div class="empty-icon">🌍</div><p>Select a destination country to see available partners</p></div>`;
+}
+
+function runCorridorSearch() {
+  const destination = document.getElementById('corridor-to').value;
+  const res         = document.getElementById('corridor-results');
+  if (!destination) { res.innerHTML=`<div class="empty-state"><div class="empty-icon">🌍</div><p>Select a destination country to see available partners</p></div>`; return; }
+  const partners  = window.ALL_COMPANIES.filter(c=>(c.countries||[]).some(co=>co.name===destination));
+  if (!partners.length) { res.innerHTML=`<div class="empty-state"><div class="empty-icon">😔</div><p>No partners found for ${destination}</p></div>`; return; }
+  const active   = partners.filter(c=>['Sending & Receiving','Sending Only','Receiving Only'].includes(c.relationship_status));
+  const inprog   = partners.filter(c=>['Agreement Signed','On-boarding','Agreement in Progress'].includes(c.relationship_status));
+  const pipeline = partners.filter(c=>['Pipeline','Under Discussion'].includes(c.relationship_status));
+  const other    = partners.filter(c=>!active.includes(c)&&!inprog.includes(c)&&!pipeline.includes(c));
+  const destFlag = window.ALL_COUNTRIES.find(c=>c.name===destination)?.flag_emoji||'🌍';
+  const section  = (title,items) => items.length===0?'': `
+    <div class="sec-label" style="margin-bottom:10px">${title} (${items.length})</div>
+    <div class="corridor-cards" style="margin-bottom:20px">${items.map(c=>buildCorridorCard(c,destination)).join('')}</div>`;
+  res.innerHTML = `
+    <div class="corridor-header">
+      <div class="corridor-route">
+        <div class="corridor-end"><span style="font-size:28px">🇹🇷</span><div><div class="corridor-end-name">Payporter</div><div class="corridor-end-sub">Turkey · Sender</div></div></div>
+        <div class="corridor-route-arrow">→</div>
+        <div class="corridor-end"><span style="font-size:28px">${destFlag}</span><div><div class="corridor-end-name">${destination}</div><div class="corridor-end-sub">${partners.length} partner${partners.length!==1?'s':''}</div></div></div>
+      </div>
+    </div>
+    ${section('● Active',active)}${section('◐ In Progress',inprog)}${section('◎ Pipeline',pipeline)}${section('Other',other)}`;
+  res.querySelectorAll('.corridor-card').forEach(card=>card.addEventListener('click',()=>openCompanyDetail(+card.dataset.id)));
+}
+
+function buildCorridorCard(c,destination) {
+  const co=(c.countries||[]).find(x=>x.name===destination); if(!co) return '';
+  const allCur=[...new Set((co.transactions||[]).flatMap(t=>t.currencies||[]))];
+  const allTx=[...new Set((co.transactions||[]).map(t=>t.txType).filter(Boolean))];
+  return `
+    <div class="corridor-card" data-id="${c.id}">
+      <div class="card-top" style="margin-bottom:12px">
+        <div class="co-avatar" ${avatarStyle(c.name)}>${initials(c.name)}</div>
+        <div style="flex:1"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div class="co-name">${c.name}</div>${relStatusTag(c.relationship_status||'Pipeline')}</div>
+        <div class="co-meta">${c.company_type||'—'}${c.country_of_origin?' · '+c.country_of_origin:''}</div></div>
+      </div>
+      <div class="corridor-detail">
+        <div class="corridor-detail-label">${co.flag} ${destination} ${co.direction?makeTag(dirLabel(co.direction),'t-dir'):''}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">${allCur.map(cu=>makeTag(cu,'t-cur')).join('')}${allTx.map(t=>makeTag(t,'t-type')).join('')}</div>
+      </div>
+      <div class="corridor-card-footer"><span style="font-size:12px;color:var(--tx3)">Click to view full profile</span><span style="color:var(--accent);font-size:16px">›</span></div>
+    </div>`;
+}
+
+/* ════════════════════════════════════════════════
+   DETAIL PANEL
+════════════════════════════════════════════════ */
+function bindDetailPanel() {
+  document.getElementById('overlay').addEventListener('click', e=>{
+    if (e.target===document.getElementById('overlay')) closePanel();
+  });
+  document.getElementById('p-close').addEventListener('click', closePanel);
+  document.getElementById('p-edit').addEventListener('click', () => {
+    const id=+document.getElementById('p-edit').dataset.id; if(!id) return;
+    closePanel(); openEditModal(id);
+  });
+}
+
+/* ════════════════════════════════════════════════
+   ADD COUNTRY MODAL
+════════════════════════════════════════════════ */
+function bindCountryModal() {
+  document.getElementById('add-country-page-btn')?.addEventListener('click', openCountryModal);
+  document.getElementById('country-mod-overlay').addEventListener('click', e=>{
+    if (e.target===document.getElementById('country-mod-overlay')) closeCountryModal();
+  });
+  document.getElementById('ct-mod-cancel').addEventListener('click', closeCountryModal);
+  document.getElementById('ct-mod-save').addEventListener('click', handleSaveCountry);
+  document.getElementById('ct-name').addEventListener('keydown', e=>{ if(e.key==='Enter') handleSaveCountry(); });
+}
+
+function openCountryModal() {
+  document.getElementById('ct-name').value='';
+  document.getElementById('ct-flag').value='';
+  document.getElementById('ct-region').value='';
+  document.getElementById('country-mod-overlay').classList.add('open');
+  setTimeout(()=>document.getElementById('ct-name').focus(),100);
+}
+
+function closeCountryModal() { document.getElementById('country-mod-overlay').classList.remove('open'); }
+
+async function handleSaveCountry() {
+  const name=document.getElementById('ct-name').value.trim();
+  const flag=document.getElementById('ct-flag').value.trim();
+  const region=document.getElementById('ct-region').value;
+  if (!name) { showToast('⚠️ Country name is required'); return; }
+  const exists=window.ALL_COUNTRIES.find(c=>c.name.toLowerCase()===name.toLowerCase());
+  if (exists) { showToast(`⚠️ "${name}" already exists`); return; }
+  const btn=document.getElementById('ct-mod-save');
+  btn.textContent='Saving…'; btn.disabled=true;
+  try {
+    await dbAddCountry({name,flag,region});
+    showToast(`✓ ${name} added`); closeCountryModal();
+    window.ALL_COUNTRIES=await dbGetAllCountries().catch(()=>[]);
+    if (window.CURRENT_PAGE==='countries') renderCountries(document.getElementById('ct-search').value);
+  } catch(err) { showToast('⚠️ '+err.message); }
+  finally { btn.textContent='Add Country'; btn.disabled=false; }
+}
+
+/* ════════════════════════════════════════════════
+   COMPANY MODAL
+════════════════════════════════════════════════ */
+function bindModal() {
+  // add-btn is inside the dropdown — bound separately in bindAddDropdown
+  // add-btn-mob is built dynamically — bound in buildBottomNav
+  document.getElementById('mod-overlay')?.addEventListener('click', e=>{
+    if (e.target===document.getElementById('mod-overlay')) closeModal();
+  });
+  document.getElementById('mod-cancel')?.addEventListener('click', closeModal);
+  document.getElementById('mod-save')?.addEventListener('click', handleSave);
+  document.getElementById('mod-del')?.addEventListener('click', handleDelete);
+  document.getElementById('add-country-btn')?.addEventListener('click', addCountryRow);
+}
+
+function populateOriginDropdown() {
+  const sel=document.getElementById('f-origin');
+  const prev=sel.value;
+  sel.innerHTML=`<option value="">Select country…</option>`+
+    window.ALL_COUNTRIES.map(c=>`<option value="${c.name}" ${c.name===prev?'selected':''}>${c.flag_emoji||'🌍'} ${c.name}</option>`).join('');
+}
+
+function clearModal() {
+  ['f-id','f-name','f-website','f-contact-name','f-contact-email',
+   'f-contact-phone','f-notes','f-agreement-date','f-golive-date','f-review-date']
+    .forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  document.getElementById('f-type').value='';
+  document.getElementById('f-status').value='Pipeline';
+}
+
+function openAddModal() {
+  clearModal();
+  populateOriginDropdown();
+  window.COUNTRY_LINKS=[];
+  renderCountryLinks();
+  document.getElementById('mod-title').textContent='Add New Partner';
+  document.getElementById('mod-sub').textContent='Fill in the company profile';
+  document.getElementById('mod-save').textContent='Add Partner';
+  document.getElementById('mod-del').style.display='none';
+  document.getElementById('mod-overlay').classList.add('open');
+}
+
+function openEditModal(id) {
+  const c=window.ALL_COMPANIES.find(x=>x.id===id); if(!c) return;
+  document.getElementById('f-id').value            =c.id;
+  document.getElementById('f-name').value          =c.name;
+  document.getElementById('f-type').value          =c.company_type         ||'';
+  document.getElementById('f-status').value        =c.relationship_status  ||'Pipeline';
+  document.getElementById('f-website').value       =c.website              ||'';
+  document.getElementById('f-agreement-date').value=c.agreement_date       ||'';
+  document.getElementById('f-golive-date').value   =c.go_live_date          ||'';
+  document.getElementById('f-review-date').value   =c.last_review_date     ||'';
+  document.getElementById('f-contact-name').value  =c.contact_name         ||'';
+  document.getElementById('f-contact-email').value =c.contact_email        ||'';
+  document.getElementById('f-contact-phone').value =c.contact_phone        ||'';
+  document.getElementById('f-notes').value         =c.notes                ||'';
+  populateOriginDropdown();
+  document.getElementById('f-origin').value        =c.country_of_origin    ||'';
+  window.COUNTRY_LINKS=(c.countries||[]).map(co=>({
+    countryId:co.id,countryName:co.name,flag:co.flag,direction:co.direction||'',
+    transactions:(co.transactions||[]).map(t=>({txType:t.txType,currencies:t.currencies||[],segments:t.segments||[]}))
+  }));
+  renderCountryLinks();
+  document.getElementById('mod-title').textContent=`Edit Partner`;
+  document.getElementById('mod-sub').textContent=`Editing ${c.name}`;
+  document.getElementById('mod-save').textContent='Save Changes';
+  document.getElementById('mod-del').style.display='inline-flex';
+  document.getElementById('mod-overlay').classList.add('open');
+}
+
+/* ── Country rows ── */
+function addCountryRow() {
+  window.COUNTRY_LINKS.push({countryId:'',countryName:'',flag:'🌍',direction:'',transactions:[]});
+  renderCountryLinks();
+  setTimeout(()=>{document.getElementById('country-links-list').scrollTop=99999;},50);
+}
+function removeCountryRow(ci){window.COUNTRY_LINKS.splice(ci,1);renderCountryLinks();}
+function addTxRow(ci){syncCountryRow(ci);window.COUNTRY_LINKS[ci].transactions.push({txType:'',currencies:[],segments:[]});renderCountryLinks();}
+function removeTxRow(ci,ti){syncCountryRow(ci);window.COUNTRY_LINKS[ci].transactions.splice(ti,1);renderCountryLinks();}
+
+function syncCountryRow(ci) {
+  const row=document.querySelector(`.country-link-row[data-ci="${ci}"]`); if(!row) return;
+  const selEl=row.querySelector('.cl-country-select');
+  const dirEl=row.querySelector('.cl-direction');
+  window.COUNTRY_LINKS[ci].countryId  =selEl.value;
+  window.COUNTRY_LINKS[ci].countryName=selEl.options[selEl.selectedIndex]?.text?.replace(/^..\s/,'')||'';
+  window.COUNTRY_LINKS[ci].direction  =dirEl.value;
+  row.querySelectorAll('.tx-pair-row').forEach((txRow,ti)=>{
+    const txSel=txRow.querySelector('.tx-type-select');
+    const curs=[...txRow.querySelectorAll('input[data-type="cur"]:checked')].map(el=>el.value);
+    const segs=[...txRow.querySelectorAll('input[data-type="seg"]:checked')].map(el=>el.value);
+    if(window.COUNTRY_LINKS[ci].transactions[ti]){
+      window.COUNTRY_LINKS[ci].transactions[ti].txType=txSel.value;
+      window.COUNTRY_LINKS[ci].transactions[ti].currencies=curs;
+      window.COUNTRY_LINKS[ci].transactions[ti].segments=segs;
+    }
+  });
+}
+
+function renderCountryLinks() {
+  const container=document.getElementById('country-links-list');
+  if(window.COUNTRY_LINKS.length===0){container.innerHTML=`<div class="cl-empty">No countries added yet — click "+ Add Country" above</div>`;return;}
+  const countryOptions=window.ALL_COUNTRIES.map(ct=>`<option value="${ct.id}">${ct.flag_emoji||'🌍'} ${ct.name}</option>`).join('');
+  container.innerHTML=window.COUNTRY_LINKS.map((link,ci)=>`
+    <div class="country-link-row" data-ci="${ci}">
+      <div class="cl-row-head">
+        <select class="cl-country-select form-select" onchange="syncCountryRow(${ci})">
+          <option value="">Select country…</option>
+          ${countryOptions.replace(`value="${link.countryId}"`,`value="${link.countryId}" selected`)}
+        </select>
+        <select class="cl-direction form-select" onchange="syncCountryRow(${ci})">
+          <option value="">Direction…</option>
+          ${DIRECTIONS.map(d=>`<option value="${d.value}" ${link.direction===d.value?'selected':''}>${d.label}</option>`).join('')}
+        </select>
+        <button class="cl-remove-btn" onclick="removeCountryRow(${ci})" title="Remove">✕</button>
+      </div>
+      <div class="cl-field">
+        <div class="cl-field-label">Transactions</div>
+        <div class="tx-pairs-list">
+          ${link.transactions.length===0
+            ?`<div class="tx-empty">No transactions yet — click "+ Add Transaction" below</div>`
+            :link.transactions.map((tx,ti)=>`
+              <div class="tx-pair-row" data-ti="${ti}">
+                <div class="tx-pair-head">
+                  <select class="tx-type-select form-select" onchange="syncCountryRow(${ci})">
+                    <option value="">Transaction type…</option>
+                    ${TX_TYPES.map(t=>`<option value="${t}" ${tx.txType===t?'selected':''}>${t}</option>`).join('')}
+                  </select>
+                  <button class="cl-remove-btn" onclick="removeTxRow(${ci},${ti})" title="Remove">✕</button>
+                </div>
+                <div class="tx-sub-label">Currencies</div>
+                <div class="pill-group">${CURRENCIES.map(cu=>`<label class="pill"><input type="checkbox" data-type="cur" value="${cu}" onchange="syncCountryRow(${ci})" ${(tx.currencies||[]).includes(cu)?'checked':''}/>${cu}</label>`).join('')}</div>
+                <div class="tx-sub-label" style="margin-top:8px">Customer Segments</div>
+                <div class="pill-group">${SEGMENTS.map(s=>`<label class="pill"><input type="checkbox" data-type="seg" value="${s}" onchange="syncCountryRow(${ci})" ${(tx.segments||[]).includes(s)?'checked':''}/>${s}</label>`).join('')}</div>
+              </div>`).join('')}
+        </div>
+        <button class="btn btn-ghost tx-add-btn" onclick="addTxRow(${ci})" type="button">+ Add Transaction</button>
+      </div>
+    </div>`).join('');
+}
+
+/* ── Save with duplicate detection + activity log ── */
+async function handleSave() {
+  const name = document.getElementById('f-name').value.trim();
+  if (!name) { showToast('⚠️ Company name is required'); return; }
+
+  const id = document.getElementById('f-id').value;
+
+  /* ── Duplicate detection ── */
+  const isDuplicate = await dbCheckDuplicateName(name, id ? +id : null);
+  if (isDuplicate) {
+    const proceed = confirm(`⚠️ A company named "${name}" already exists. Are you sure you want to save anyway?`);
+    if (!proceed) return;
+  }
+
+  window.COUNTRY_LINKS.forEach((_,ci)=>syncCountryRow(ci));
+  const invalid=window.COUNTRY_LINKS.find(l=>!l.countryId);
+  if (invalid) { showToast('⚠️ Please select a country for every row'); return; }
+
+  const payload = {
+    name,
+    type:                document.getElementById('f-type').value           ||null,
+    relationshipStatus:  document.getElementById('f-status').value         ||'Pipeline',
+    countryOfOrigin:     document.getElementById('f-origin').value         ||null,
+    website:             document.getElementById('f-website').value.trim() ||null,
+    agreementDate:       document.getElementById('f-agreement-date').value ||null,
+    goLiveDate:          document.getElementById('f-golive-date').value     ||null,
+    lastReviewDate:      document.getElementById('f-review-date').value    ||null,
+    contactName:         document.getElementById('f-contact-name').value.trim()  ||null,
+    contactEmail:        document.getElementById('f-contact-email').value.trim() ||null,
+    contactPhone:        document.getElementById('f-contact-phone').value.trim() ||null,
+    notes:               document.getElementById('f-notes').value.trim()   ||null,
+    countryLinks:        window.COUNTRY_LINKS
+  };
+
+  const btn=document.getElementById('mod-save');
+  btn.textContent='Saving…'; btn.disabled=true;
+  try {
+    if (id) {
+      await dbUpdateCompany(+id, payload);
+      await dbLogActivity('updated', +id, name, `Status: ${payload.relationshipStatus}`);
+      showToast(`✓ ${name} updated`);
+    } else {
+      const company = await dbAddCompany(payload);
+      await dbLogActivity('added', company.id, name, `Type: ${payload.type||'—'}`);
+      showToast(`✓ ${name} added`);
+    }
+    closeModal();
+    await loadCompanies();
+    if (window.CURRENT_PAGE==='countries') renderCountries(document.getElementById('ct-search').value);
+    if (window.CURRENT_PAGE==='dashboard') renderDashboard();
+  } catch(err) {
+    console.error(err); showToast('⚠️ '+err.message);
+  } finally {
+    btn.textContent=id?'Save Changes':'Add Partner'; btn.disabled=false;
+  }
+}
+
+async function handleDelete() {
+  const id  =+document.getElementById('f-id').value;
+  const name= document.getElementById('f-name').value;
+  if (!id) return;
+  if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
+  try {
+    await dbLogActivity('deleted', id, name, 'Company removed from system');
+    await dbDeleteCompany(id);
+    showToast(`🗑 ${name} deleted`);
+    closeModal(); await loadCompanies();
+    if (window.CURRENT_PAGE==='countries') renderCountries();
+    if (window.CURRENT_PAGE==='dashboard') renderDashboard();
+  } catch(err) { showToast('⚠️ '+err.message); }
+}
+
+/* ════════════════════════════════════════════════
+   MOBILE FAB
+════════════════════════════════════════════════ */
+function openFabMenu() {
+  closeFabMenu();
+  const backdrop=document.createElement('div'); backdrop.className='fab-backdrop'; backdrop.id='fab-backdrop';
+  backdrop.addEventListener('click',closeFabMenu);
+  const menu=document.createElement('div'); menu.className='fab-menu'; menu.id='fab-menu';
+  const isAdmin = window.USER_ROLE==='admin';
+
+  if (!isAdmin) {
+    menu.innerHTML=`<p style="color:var(--tx3);font-size:13px;text-align:center;padding:8px">View only access</p>`;
+  } else if (window.ACTIVE_SIDE === 'workspace') {
+    menu.innerHTML=`<button class="fab-menu-item primary" id="fab-log-act">📝 Log Activity</button>`;
+  } else {
+    menu.innerHTML=`
+      <button class="fab-menu-item primary" id="fab-add-company">+ Add Company</button>
+      <button class="fab-menu-item secondary" id="fab-add-country">+ Add Country</button>`;
+  }
+
+  document.body.appendChild(backdrop); document.body.appendChild(menu);
+  document.getElementById('fab-add-company')?.addEventListener('click',()=>{closeFabMenu();openAddModal();});
+  document.getElementById('fab-add-country')?.addEventListener('click',()=>{closeFabMenu();openCountryModal();});
+  document.getElementById('fab-log-act')?.addEventListener('click',()=>{closeFabMenu();openActivityModal();});
+}
+
+function closeFabMenu() {
+  document.getElementById('fab-backdrop')?.remove();
+  document.getElementById('fab-menu')?.remove();
+}
+
+/* ════════════════════════════════════════════════
+   WORKSPACE BINDING
+════════════════════════════════════════════════ */
+function bindWorkspace() {
+  // Switch button
+  document.getElementById('organizer-switch-btn')?.addEventListener('click', openOrganizerSwitch);
+
+  // Quick log buttons
+  document.getElementById('ws-quick-log-btn')?.addEventListener('click', () => openActivityModal());
+  document.getElementById('ws-log-add-btn')?.addEventListener('click', () => openActivityModal());
+  document.getElementById('ws-start-review-btn')?.addEventListener('click', initWsReview);
+
+  // Export buttons
+  document.getElementById('ws-log-export-btn')?.addEventListener('click', exportWsCSV);
+  document.getElementById('ws-co-export-btn')?.addEventListener('click', exportWsCSV);
+
+  // Activity modal close/save
+  document.getElementById('ws-activity-overlay')?.addEventListener('click', e => {
+    if (e.target === document.getElementById('ws-activity-overlay')) closeActivityModal();
+  });
+  document.getElementById('wam-cancel-btn')?.addEventListener('click', closeActivityModal);
+  document.getElementById('wam-save-btn')?.addEventListener('click', handleSaveActivity);
+
+  // Search/filter bindings for workspace pages
+  ['ws-co-search','ws-co-filter-assignee'].forEach(id => {
+    document.getElementById(id)?.addEventListener('input', renderWsCompanies);
+    document.getElementById(id)?.addEventListener('change', renderWsCompanies);
+  });
+  ['ws-log-search','ws-log-filter-company','ws-log-filter-type','ws-log-filter-status','ws-log-filter-user'].forEach(id => {
+    document.getElementById(id)?.addEventListener('input', renderWsLog);
+    document.getElementById(id)?.addEventListener('change', renderWsLog);
+  });
+}
+
+/* ════════════════════════════════════════════════
+   THEME
+════════════════════════════════════════════════ */
+function bindTheme() {
+  document.getElementById('theme-toggle')?.addEventListener('click',toggleTheme);
+  document.getElementById('theme-toggle-mob')?.addEventListener('click',toggleTheme);
+}
+
+function toggleTheme() {
+  window.IS_DARK = !window.IS_DARK;
+  const theme = window.IS_DARK ? 'dark' : 'light';
+  document.documentElement.setAttribute('data-theme', theme);
+
+  // Update all theme toggle buttons
+  const icon = window.IS_DARK ? '☀️' : '🌙';
+  document.getElementById('theme-toggle')     && (document.getElementById('theme-toggle').textContent     = icon);
+  document.getElementById('theme-toggle-mob') && (document.getElementById('theme-toggle-mob').textContent = icon);
+  document.getElementById('mob-theme-btn')    && (document.getElementById('mob-theme-btn').textContent    = icon);
+
+  // Force iOS Safari repaint
+  document.body.style.display = 'none';
+  document.body.offsetHeight; // trigger reflow
+  document.body.style.display = '';
+
+  // Save preference
+  try { localStorage.setItem('fi_theme', theme); } catch(e) {}
+}
+
+function loadSavedTheme() {
+  try {
+    const saved = localStorage.getItem('fi_theme');
+    if (saved) {
+      window.IS_DARK = saved === 'dark';
+      document.documentElement.setAttribute('data-theme', saved);
+    }
+  } catch(e) {}
+}

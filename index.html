@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FI Tracker — Payporter</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+  <!-- LOGIN -->
+  <div id="login-screen">
+    <div class="lbox">
+
+      <!-- Header -->
+      <div class="lbox-head">
+        <div class="lbox-badge">FI</div>
+        <div>
+          <div class="lbox-title">FI Tracker</div>
+          <div class="lbox-sub">Payporter · Internal Tool</div>
+        </div>
+      </div>
+
+      <!-- Role toggle -->
+      <div class="lbox-toggle">
+        <button class="lbox-toggle-btn active" id="type-admin" onclick="selectLoginType('admin')">Admin</button>
+        <button class="lbox-toggle-btn" id="type-viewer" onclick="selectLoginType('viewer')">Viewer</button>
+      </div>
+
+      <!-- Viewer name — shown only for viewer -->
+      <div class="form-group" id="viewer-name-wrap" style="display:none">
+        <label class="form-label">Your Name *</label>
+        <input class="form-input" type="text" id="login-name" placeholder="How should we call you?" />
+      </div>
+
+      <!-- Email -->
+      <div class="form-group">
+        <label class="form-label">Email</label>
+        <input class="form-input" type="email" id="login-email" placeholder="your@email.com" />
+      </div>
+
+      <!-- Password with eye toggle -->
+      <div class="form-group">
+        <label class="form-label">Password</label>
+        <div style="position:relative">
+          <input class="form-input" type="password" id="login-password" placeholder="••••••••" style="padding-right:42px" />
+          <button type="button" id="toggle-password" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--tx3);padding:4px;display:flex;align-items:center">
+            <svg id="eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <button class="btn btn-primary" id="login-btn" style="width:100%;justify-content:center;margin-top:4px">
+        <span id="login-btn-text">Sign In as Admin</span>
+      </button>
+      <div class="login-error" id="login-error" style="margin-top:10px;font-size:13px;color:var(--danger);text-align:center;min-height:18px"></div>
+
+    </div>
+  </div>
+
+  <!-- APP -->
+  <div id="app" style="display:none">
+
+    <!-- TOP NAV -->
+    <nav class="topnav">
+      <div class="logo"><div class="logo-badge">FI</div>FI Tracker</div>
+      <div class="nav-items" id="topnav-items">
+        <!-- built dynamically by buildTopNav() -->
+      </div>
+      <div class="nav-actions">
+        <button class="theme-btn" id="theme-toggle">☀️</button>
+        <span class="nav-identity" id="role-badge">Viewer</span>
+
+        <!-- Switch to FI Organizer — admin only, hidden by default -->
+        <button class="btn btn-ghost nav-switch-btn" id="organizer-switch-btn" style="display:none" title="Switch to FI Organizer">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+          FI Organizer
+        </button>
+
+        <!-- Dropdown Add button — admin only -->
+        <div class="nav-add-wrap" id="nav-add-wrap" style="display:none">
+          <button class="btn btn-primary nav-add-btn" id="nav-add-btn">
+            + Add
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-left:4px"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div class="nav-add-dropdown" id="nav-add-dropdown">
+            <button class="nav-add-item" id="add-btn">🏢 Add Company</button>
+            <button class="nav-add-item" id="add-country-page-btn">🌍 Add Country</button>
+          </div>
+        </div>
+
+        <button class="btn btn-ghost" id="logout-btn" style="font-size:13px">Sign out</button>
+      </div>
+    </nav>
+
+
+    <!-- MOBILE HEADER — visible on small screens only -->
+    <div id="mobile-header">
+      <div class="mob-logo">
+        <div class="logo-badge">FI</div>
+        FI Tracker
+      </div>
+      <div class="mob-actions">
+        <span class="mob-name" id="mob-name"></span>
+        <button class="mob-switch-btn" id="mob-switch-btn" style="display:none">
+          ⇄ Workspace
+        </button>
+        <button class="mob-theme-btn" id="theme-toggle-mob">☀️</button>
+      </div>
+    </div>
+
+    <!-- BOTTOM NAV — rebuilt dynamically by buildBottomNav() -->
+    <nav class="botnav" id="botnav"></nav>
+
+    <div class="shell">
+      <div class="content">
+
+        <!-- COMPANIES PAGE -->
+        <div id="page-companies" class="page active">
+          <div class="page-head">
+            <div><h1 class="page-title">Partner Companies</h1><p class="page-sub">All FI partners — click any card for full details</p></div>
+            <div class="view-toggle">
+              <button class="view-btn active" data-view="grid" title="Grid">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+              </button>
+              <button class="view-btn" data-view="list" title="List">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="search-row">
+            <div class="search-wrap">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input class="search-input" type="text" id="co-search" placeholder="Search companies…" />
+            </div>
+            <select class="filter-sel" id="filter-dir">
+              <option value="">All directions</option>
+              <option value="both">Both ways</option>
+              <option value="send">Send only</option>
+              <option value="receive">Receive only</option>
+            </select>
+            <select class="filter-sel" id="filter-country"><option value="">All countries</option></select>
+            <select class="filter-sel" id="filter-status">
+              <option value="">All statuses</option>
+              <option>Sending & Receiving</option>
+              <option>Sending Only</option>
+              <option>Receiving Only</option>
+              <option>Pipeline</option>
+              <option>Under Discussion</option>
+              <option>Agreement in Progress</option>
+              <option>Agreement Signed</option>
+              <option>On-boarding</option>
+              <option>On Hold</option>
+              <option>Suspended</option>
+              <option>Inactive</option>
+            </select>
+          </div>
+          <div id="co-loading" class="loading-state"><div class="spinner"></div><p>Loading partners…</p></div>
+          <div id="co-empty" class="empty-state" style="display:none"><div class="empty-icon">🔍</div><p>No companies match your filters</p></div>
+          <div id="co-grid" class="co-grid"></div>
+          <div id="co-list" class="table-wrap" style="display:none">
+            <table>
+              <thead><tr><th>Company</th><th>Status</th><th>Countries</th><th>Direction</th><th>Currencies</th><th>Types</th></tr></thead>
+              <tbody id="co-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- COUNTRIES PAGE -->
+        <div id="page-countries" class="page">
+          <div class="page-head">
+            <div><h1 class="page-title">Countries</h1><p class="page-sub">Browse by market — see all partners per country</p></div>
+          </div>
+          <div class="search-row">
+            <div class="search-wrap">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input class="search-input" type="text" id="ct-search" placeholder="Search countries…" />
+            </div>
+          </div>
+          <div class="alpha-jump" id="alpha-jump"></div>
+          <div id="ct-index"></div>
+        </div>
+
+        <!-- CORRIDOR PAGE -->
+        <div id="page-corridor" class="page">
+          <div class="page-head">
+            <div><h1 class="page-title">Corridor Search</h1><p class="page-sub">Find all partners that can receive money on behalf of Payporter</p></div>
+          </div>
+          <div class="corridor-box">
+            <div class="corridor-origin">
+              <div class="corridor-origin-flag">🇹🇷</div>
+              <div>
+                <div class="corridor-origin-name">Payporter</div>
+                <div class="corridor-origin-sub">Turkey — always the sender</div>
+              </div>
+            </div>
+            <div class="corridor-arrow-big">→</div>
+            <div class="corridor-dest">
+              <label class="form-label">Send to which country?</label>
+              <select class="form-select corridor-sel" id="corridor-to"><option value="">Select destination…</option></select>
+            </div>
+          </div>
+          <div id="corridor-results" style="margin-top:24px">
+            <div class="empty-state"><div class="empty-icon">🌍</div><p>Select a destination country to see available partners</p></div>
+          </div>
+        </div>
+
+        <!-- DASHBOARD PAGE -->
+        <div id="page-dashboard" class="page">
+          <div class="page-head">
+            <div><h1 class="page-title">Dashboard</h1><p class="page-sub">Click any stat or chart to explore</p></div>
+            <div id="dash-export-wrap"></div>
+          </div>
+          <div id="dash-stats" class="stats-row"></div>
+          <div id="dash-grid" class="dash-grid"></div>
+        </div>
+
+
+        <!-- ══════════════════════════════
+             FI WORKSPACE PAGES
+        ══════════════════════════════ -->
+
+        <!-- MY DESK -->
+        <div id="page-ws-desk" class="page">
+          <div class="page-head">
+            <div><h1 class="page-title">My Desk</h1><p class="page-sub">Your daily overview — follow-ups, assignments, this week</p></div>
+            <button class="btn btn-primary" id="ws-quick-log-btn">+ Log Activity</button>
+          </div>
+          <div id="ws-desk-content"></div>
+        </div>
+
+        <!-- WS COMPANIES -->
+        <div id="page-ws-companies" class="page">
+          <div class="page-head">
+            <div><h1 class="page-title">Companies</h1><p class="page-sub">Assign, pin and track your partner companies</p></div>
+            <button class="btn btn-ghost" id="ws-co-export-btn" style="font-size:13px">↓ Export</button>
+          </div>
+          <div class="search-row">
+            <div class="search-wrap">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input class="search-input" type="text" id="ws-co-search" placeholder="Search companies…" />
+            </div>
+            <select class="filter-sel" id="ws-co-filter-assignee">
+              <option value="">All assignees</option>
+            </select>
+          </div>
+          <div id="ws-companies-content"></div>
+        </div>
+
+        <!-- WS LOG -->
+        <div id="page-ws-log" class="page">
+          <div class="page-head">
+            <div><h1 class="page-title">Activity Log</h1><p class="page-sub">All logged activities across the team</p></div>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-ghost" id="ws-log-export-btn" style="font-size:13px">↓ Export</button>
+              <button class="btn btn-primary" id="ws-log-add-btn">+ Log Activity</button>
+            </div>
+          </div>
+          <div class="search-row">
+            <div class="search-wrap">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input class="search-input" type="text" id="ws-log-search" placeholder="Search activities…" />
+            </div>
+            <select class="filter-sel" id="ws-log-filter-company"><option value="">All companies</option></select>
+            <select class="filter-sel" id="ws-log-filter-type">
+              <option value="">All types</option>
+              <option>Call</option><option>Email</option><option>Meeting</option>
+              <option>Document Sent</option><option>Follow-up</option><option>Other</option>
+            </select>
+            <select class="filter-sel" id="ws-log-filter-status">
+              <option value="">All statuses</option>
+              <option>Pending</option><option>Completed</option><option>Cancelled</option>
+            </select>
+            <input class="filter-sel search-input" type="text" id="ws-log-filter-user" placeholder="Filter by person…" style="max-width:160px" />
+          </div>
+          <div id="ws-log-content"></div>
+        </div>
+
+        <!-- WS REVIEW -->
+        <div id="page-ws-review" class="page">
+          <div class="page-head">
+            <div><h1 class="page-title">End-of-Day Review</h1><p class="page-sub">Walk through your companies — make sure nothing is missed</p></div>
+            <button class="btn btn-primary" id="ws-start-review-btn">Start Review</button>
+          </div>
+          <div id="ws-review-content">
+            <div class="empty-state">
+              <div class="empty-icon">✅</div>
+              <p>Click Start Review to begin</p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- DETAIL PANEL -->
+    <div class="overlay" id="overlay">
+      <div class="panel">
+        <div class="panel-head">
+          <div class="panel-avatar" id="p-avatar">?</div>
+          <div class="panel-info"><div class="panel-name" id="p-name">—</div><div class="panel-type" id="p-type">—</div></div>
+          <div class="panel-actions">
+            <button class="panel-btn" id="p-edit" title="Edit">✏️</button>
+            <button class="panel-btn" id="p-close">✕</button>
+          </div>
+        </div>
+        <div class="panel-body" id="panel-body"></div>
+      </div>
+    </div>
+
+    <!-- ADD / EDIT COMPANY MODAL -->
+    <div class="mod-overlay" id="mod-overlay">
+      <div class="modal">
+        <div class="mod-title" id="mod-title">Add New Partner</div>
+        <div class="mod-sub" id="mod-sub">Fill in the company profile</div>
+        <input type="hidden" id="f-id" />
+
+        <!-- Basic info -->
+        <div class="modal-section-title">Basic Information</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Company Name *</label>
+            <input class="form-input" type="text" id="f-name" placeholder="e.g. Western Union" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Company Type</label>
+            <select class="form-select" id="f-type">
+              <option value="">Select type…</option>
+              <option>Money Transfer Operator</option>
+              <option>Bank</option>
+              <option>Fintech</option>
+              <option>Mobile Wallet Provider</option>
+              <option>Aggregator</option>
+              <option>Payment Processor</option>
+              <option>Crypto Exchange</option>
+              <option>Neobank</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Country of Origin</label>
+            <select class="form-select" id="f-origin">
+              <option value="">Select country…</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Website</label>
+            <input class="form-input" type="text" id="f-website" placeholder="e.g. https://westernunion.com" />
+          </div>
+        </div>
+
+        <!-- Relationship status -->
+        <div class="modal-section-title">Relationship Status</div>
+        <div class="form-group">
+          <label class="form-label">Current Status</label>
+          <select class="form-select" id="f-status">
+            <option>Sending & Receiving</option>
+            <option>Sending Only</option>
+            <option>Receiving Only</option>
+            <option selected>Pipeline</option>
+            <option>Under Discussion</option>
+            <option>Agreement in Progress</option>
+            <option>Agreement Signed</option>
+            <option>On-boarding</option>
+            <option>On Hold</option>
+            <option>Suspended</option>
+            <option>Inactive</option>
+          </select>
+        </div>
+
+        <!-- Key dates -->
+        <div class="modal-section-title">Key Dates</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Agreement Date</label>
+            <input class="form-input" type="date" id="f-agreement-date" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Go-Live Date</label>
+            <input class="form-input" type="date" id="f-golive-date" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Last Review Date</label>
+            <input class="form-input" type="date" id="f-review-date" />
+          </div>
+          <div class="form-group"></div>
+        </div>
+
+        <!-- Contact -->
+        <div class="modal-section-title">Contact Person</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Contact Name</label>
+            <input class="form-input" type="text" id="f-contact-name" placeholder="e.g. John Smith" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Contact Email</label>
+            <input class="form-input" type="email" id="f-contact-email" placeholder="john@company.com" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Contact Phone</label>
+            <input class="form-input" type="text" id="f-contact-phone" placeholder="+1 234 567 8900" />
+          </div>
+          <div class="form-group"></div>
+        </div>
+
+        <!-- Notes -->
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <textarea class="form-textarea" id="f-notes" placeholder="Any additional notes…" rows="2"></textarea>
+        </div>
+
+        <!-- Countries & Transactions -->
+        <div class="cl-section">
+          <div class="cl-section-head">
+            <div>
+              <div class="modal-section-title" style="margin-bottom:2px">Countries & Transactions</div>
+              <div style="font-size:12px;color:var(--tx3)">Countries this partner operates in</div>
+            </div>
+            <button class="btn btn-ghost" id="add-country-btn" type="button">+ Add Country</button>
+          </div>
+          <div id="country-links-list"><div class="cl-empty">No countries added yet</div></div>
+        </div>
+
+        <div class="mod-actions">
+          <button class="btn btn-danger" id="mod-del" style="display:none">Delete</button>
+          <button class="btn btn-ghost" id="mod-cancel">Cancel</button>
+          <button class="btn btn-primary" id="mod-save">Add Partner</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ADD COUNTRY MODAL -->
+    <div class="mod-overlay" id="country-mod-overlay">
+      <div class="modal" style="max-width:420px">
+        <div class="mod-title">Add New Country</div>
+        <div class="mod-sub">Add a new country to the directory</div>
+        <div class="form-group">
+          <label class="form-label">Country Name *</label>
+          <input class="form-input" type="text" id="ct-name" placeholder="e.g. Japan" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Flag Emoji</label>
+          <input class="form-input" type="text" id="ct-flag" placeholder="e.g. 🇯🇵" maxlength="4" />
+          <div style="font-size:11px;color:var(--tx3);margin-top:4px">Search "Japan flag emoji" on Google and paste it here</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Region</label>
+          <select class="form-select" id="ct-region">
+            <option value="">Select region…</option>
+            <option>Europe</option><option>Middle East</option><option>Asia</option>
+            <option>Africa</option><option>Americas</option><option>Oceania</option>
+          </select>
+        </div>
+        <div class="mod-actions">
+          <button class="btn btn-ghost" id="ct-mod-cancel">Cancel</button>
+          <button class="btn btn-primary" id="ct-mod-save">Add Country</button>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- WORKSPACE ACTIVITY MODAL -->
+    <div class="mod-overlay" id="ws-activity-overlay">
+      <div class="modal" style="max-width:500px">
+        <div class="mod-title" id="wam-title">Log Activity</div>
+        <div class="mod-sub">Record what happened with this partner</div>
+        <input type="hidden" id="wam-id" />
+
+        <div class="form-group">
+          <label class="form-label">Company</label>
+          <select class="form-select" id="wam-company"><option value="">No specific company</option></select>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Date *</label>
+            <input class="form-input" type="date" id="wam-date" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Activity Type</label>
+            <select class="form-select" id="wam-type">
+              <option>Call</option><option>Email</option><option>Meeting</option>
+              <option>Document Sent</option><option>Follow-up</option><option selected>Other</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Note *</label>
+          <textarea class="form-textarea" id="wam-note" rows="3" placeholder="What happened? What was discussed?"></textarea>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Status</label>
+            <select class="form-select" id="wam-status">
+              <option>Pending</option><option>Completed</option><option>Cancelled</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Urgency</label>
+            <select class="form-select" id="wam-urgency">
+              <option>Normal</option><option>High</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Follow-up Date</label>
+            <input class="form-input" type="date" id="wam-followup" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Next Action</label>
+            <input class="form-input" type="text" id="wam-nextaction" placeholder="What needs to happen next…" />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Document Reference</label>
+          <input class="form-input" type="text" id="wam-docref" placeholder="File name, link, or reference…" />
+        </div>
+
+        <div class="mod-actions">
+          <button class="btn btn-ghost" id="wam-cancel-btn">Cancel</button>
+          <button class="btn btn-primary" id="wam-save-btn">Save Activity</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/db.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/companies.js"></script>
+  <script src="js/countries.js"></script>
+  <script src="js/dashboard.js"></script>
+  <script src="js/observations.js"></script>
+  <script src="js/contacts.js"></script>
+  <script src="js/workspace.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
