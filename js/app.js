@@ -501,6 +501,7 @@ function bindSearch() {
   document.getElementById('filter-country').addEventListener('change', renderCompanies);
   document.getElementById('filter-status').addEventListener('change', renderCompanies);
   document.getElementById('ct-search').addEventListener('input', e=>renderCountries(e.target.value));
+  document.getElementById('export-report-btn')?.addEventListener('click', openReportModal);
 }
 
 /* ════════════════════════════════════════════════
