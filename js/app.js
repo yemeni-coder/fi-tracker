@@ -598,13 +598,34 @@ async function runCorridorSearch(destination) {
     return parseFloat(cm.value)||0;
   }
   function commLabel(cm) {
-    if (!cm) return '<span style="font-size:11px;color:var(--tx3);font-style:italic">No commission defined</span>';
+    if (!cm) return '<div style="font-size:11px;color:var(--tx3);font-style:italic;padding:4px 0">No commission defined</div>';
     const ov = destCountry && cm.country_id===destCountry.id;
-    let v='';
-    if (cm.type==='fixed') v='<strong>'+cm.value+' '+(cm.currency||'')+'</strong> <span style="color:var(--tx3)">'+(cm.unit||'').replace(/_/g,' ')+'</span>';
-    else if (cm.type==='percentage') v='<strong>'+cm.value+'%</strong> <span style="color:var(--tx3)">'+(cm.unit||'').replace(/_/g,' ')+'</span>';
-    else v='<strong>Tiered</strong> <span style="color:var(--tx3);font-size:10px">('+( cm.tiers?.length||0)+' tiers)</span>';
-    return '<span style="font-size:12px;color:var(--tx)">💰 '+v+(ov?' <span style="font-size:10px;color:var(--warn)">(country rate)</span>':'')+'</span>';
+    const typeTag = '<span style="font-size:10px;font-weight:700;padding:1px 7px;border-radius:20px;margin-right:6px;'
+      + (cm.type==='fixed' ? 'background:#e3f2fd;color:#1565c0' : cm.type==='percentage' ? 'background:#e8f5e9;color:#2e7d32' : 'background:#fff3e0;color:#e65100')
+      + '">' + (cm.type==='fixed'?'Fixed':cm.type==='percentage'?'Percentage':'Tiered') + '</span>';
+    const overrideTag = ov ? '<span style="font-size:10px;color:var(--warn);margin-left:4px">(country rate)</span>' : '';
+    let detail = '';
+    if (cm.type==='fixed') {
+      detail = '<strong style="font-size:13px">' + cm.value + ' ' + (cm.currency||'') + '</strong>'
+        + ' <span style="font-size:11px;color:var(--tx3)">' + (cm.unit||'').replace(/_/g,' ') + '</span>';
+    } else if (cm.type==='percentage') {
+      detail = '<strong style="font-size:13px">' + cm.value + '%</strong>'
+        + ' <span style="font-size:11px;color:var(--tx3)">' + (cm.unit||'').replace(/_/g,' ') + '</span>';
+    } else if (cm.type==='tiered') {
+      const tiers = cm.tiers||[];
+      detail = '<div style="margin-top:4px;display:flex;flex-direction:column;gap:2px">'
+        + tiers.map(t =>
+            '<div style="font-size:11px;display:flex;gap:8px;align-items:center">'
+            + '<span style="color:var(--tx3);min-width:110px">' + t.from_count + '–' + (t.to_count ?? '∞') + ' tx</span>'
+            + '<strong>' + t.value + ' ' + (t.currency||'') + '</strong>'
+            + '</div>'
+          ).join('')
+        + '</div>';
+    }
+    return '<div style="font-size:12px;padding:4px 0">'
+      + '💰 ' + typeTag + overrideTag
+      + '<div style="margin-top:4px;margin-left:2px">' + detail + '</div>'
+      + '</div>';
   }
   const cheapSort = arr => [...arr].sort((a,b)=>sortVal(getBestComm(a))-sortVal(getBestComm(b)));
 
