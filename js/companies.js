@@ -292,6 +292,13 @@ function openCompanyDetail(id) {
       <div class="sec" id="contacts-section-${c.id}">
         <div class="loading-state" style="padding:12px"><div class="spinner"></div></div>
       </div>
+    </div>
+
+    <div>
+      <div class="sec-label">Commissions</div>
+      <div id="commissions-section">
+        <div class="loading-state" style="padding:12px"><div class="spinner"></div></div>
+      </div>
     </div>`;
 
   // Bind PDF button
@@ -300,72 +307,138 @@ function openCompanyDetail(id) {
   // Load contacts
   renderContactsSection(c.id, `contacts-section-${c.id}`);
 
+  // Load commissions
+  renderCommissionsSection(c.id, c);
+
   document.getElementById('overlay').classList.add('open');
 }
 
 /* ════════════════════════════════════════════════
    PDF EXPORT
 ════════════════════════════════════════════════ */
-function exportCompanyPDF(c) {
+async function exportCompanyPDF(c) {
   const col = getCompanyColor(c.name);
 
-  const ctRows = (c.countries||[]).map(co => {
-    const txRows = (co.transactions||[]).map(tx => `
-      <tr>
-        <td style="padding:6px 10px;border-bottom:1px solid #eee;font-size:12px">${tx.txType||'—'}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #eee;font-size:12px">${(tx.currencies||[]).join(', ')||'—'}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #eee;font-size:12px">${(tx.segments||[]).join(', ')||'—'}</td>
-      </tr>`).join('');
+  // Fetch commissions
+  let commissions = [];
+  try { commissions = await dbGetCommissions(c.id); } catch(e) {}
 
-    return `
-      <div style="margin-bottom:16px;break-inside:avoid">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-          <span style="font-size:20px">${co.flag}</span>
-          <strong style="font-size:14px">${co.name}</strong>
-          ${co.direction?`<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:#e8f5e9;color:#2e7d32">${dirLabel(co.direction)}</span>`:''}
-        </div>
-        ${txRows ? `
-        <table style="width:100%;border-collapse:collapse;font-family:sans-serif">
-          <thead>
-            <tr style="background:#f5f5f5">
-              <th style="padding:6px 10px;text-align:left;font-size:11px;color:#666;font-weight:600">TYPE</th>
-              <th style="padding:6px 10px;text-align:left;font-size:11px;color:#666;font-weight:600">CURRENCIES</th>
-              <th style="padding:6px 10px;text-align:left;font-size:11px;color:#666;font-weight:600">SEGMENTS</th>
-            </tr>
-          </thead>
-          <tbody>${txRows}</tbody>
-        </table>` : '<p style="color:#999;font-size:12px">No transactions</p>'}
-      </div>`;
+  // Get commission for a specific country
+  function getCommForCountry(coName) {
+    const ct = (window.ALL_COUNTRIES||[]).find(x => x.name === coName);
+    const specific = ct ? commissions.find(cm => cm.country_id === ct.id) : null;
+    const general  = commissions.find(cm => !cm.country_id);
+    return specific ? {comm:specific, isOverride:true} : general ? {comm:general, isOverride:false} : null;
+  }
+
+  function commBadge(coName) {
+    const found = getCommForCountry(coName);
+    if (!found) return '';
+    const {comm, isOverride} = found;
+    let val = '';
+    if (comm.type === 'fixed')
+      val = (comm.value||'—') + ' ' + (comm.currency||'') + ' / ' + (comm.unit||'').replace(/_/g,' ');
+    else if (comm.type === 'percentage')
+      val = (comm.value||'—') + '% ' + (comm.unit||'').replace(/_/g,' ');
+    else if (comm.type === 'tiered')
+      val = 'Tiered (' + (comm.tiers?comm.tiers.length:0) + ' tiers)';
+    return '<div style="font-size:11px;color:#1565c0;margin-bottom:6px;padding:4px 10px;background:#e3f2fd;border-radius:4px;display:inline-block">' +
+      '\uD83D\uDCB0 Commission: <strong>' + val + '</strong>' +
+      (isOverride ? ' <span style="color:#e65100;font-size:10px">(country-specific)</span>' : '') +
+      '</div>';
+  }
+
+  // Build country rows
+  const ctRows = (c.countries||[]).map(co => {
+    const txRows = (co.transactions||[]).map(tx =>
+      '<tr>' +
+      '<td style="padding:6px 10px;border-bottom:1px solid #eee;font-size:12px">' + (tx.txType||'—') + '</td>' +
+      '<td style="padding:6px 10px;border-bottom:1px solid #eee;font-size:12px">' + ((tx.currencies||[]).join(', ')||'—') + '</td>' +
+      '<td style="padding:6px 10px;border-bottom:1px solid #eee;font-size:12px">' + ((tx.segments||[]).join(', ')||'—') + '</td>' +
+      '</tr>'
+    ).join('');
+
+    const dirBadge = co.direction
+      ? '<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:#e8f5e9;color:#2e7d32">' + dirLabel(co.direction) + '</span>'
+      : '';
+
+    const txTable = txRows
+      ? '<table style="width:100%;border-collapse:collapse;font-family:sans-serif">' +
+        '<thead><tr style="background:#f5f5f5">' +
+        '<th style="padding:6px 10px;text-align:left;font-size:11px;color:#666;font-weight:600">TYPE</th>' +
+        '<th style="padding:6px 10px;text-align:left;font-size:11px;color:#666;font-weight:600">CURRENCIES</th>' +
+        '<th style="padding:6px 10px;text-align:left;font-size:11px;color:#666;font-weight:600">SEGMENTS</th>' +
+        '</tr></thead><tbody>' + txRows + '</tbody></table>'
+      : '<p style="color:#999;font-size:12px">No transactions</p>';
+
+    return '<div style="margin-bottom:16px;break-inside:avoid">' +
+      '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">' +
+      '<span style="font-size:20px">' + co.flag + '</span>' +
+      '<strong style="font-size:14px">' + co.name + '</strong> ' +
+      dirBadge + '</div>' +
+      commBadge(co.name) +
+      txTable + '</div>';
   }).join('');
 
-  const html = `
-<!DOCTYPE html>
+  // Build full commission section
+  function buildCommSection() {
+    if (!commissions.length) return '<p style="color:#999;font-size:12px">No commissions defined</p>';
+    return commissions.map(comm => {
+      const ctName = comm.country_id
+        ? ((window.ALL_COUNTRIES||[]).find(x=>x.id===comm.country_id)||{}).name || 'Specific Country'
+        : null;
+      const scopeLabel = ctName
+        ? '<span style="font-size:10px;padding:2px 7px;border-radius:20px;background:#fff3e0;color:#e65100;border:1px solid #ffcc80">' + ctName + ' only</span>'
+        : '<span style="font-size:10px;padding:2px 7px;border-radius:20px;background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7">All Countries</span>';
+      const typeBadge = '<span style="font-size:10px;padding:2px 7px;border-radius:20px;background:#e3f2fd;color:#1565c0;border:1px solid #90caf9">' +
+        (comm.type==='fixed'?'Fixed':comm.type==='percentage'?'Percentage':'Tiered') + '</span>';
+      let val = '';
+      if (comm.type==='fixed')
+        val = '<strong style="font-size:16px">' + (comm.value||'—') + ' ' + (comm.currency||'') + '</strong>' +
+          ' <span style="color:#666;font-size:11px">' + (comm.unit||'').replace(/_/g,' ') + '</span>';
+      else if (comm.type==='percentage')
+        val = '<strong style="font-size:16px">' + (comm.value||'—') + '%</strong>' +
+          ' <span style="color:#666;font-size:11px">' + (comm.unit||'').replace(/_/g,' ') + '</span>';
+      else if (comm.type==='tiered')
+        val = (comm.tiers||[]).map(t =>
+          '<div style="font-size:12px;padding:3px 0;border-bottom:1px solid #f0f0f0">' +
+          '<span style="color:#666;min-width:140px;display:inline-block">' + t.from_count + ' – ' + (t.to_count||'∞') + ' tx</span>' +
+          '<strong>' + t.value + ' ' + (t.currency||'') + '</strong></div>'
+        ).join('');
+      return '<div style="padding:10px 14px;border:1px solid #eee;border-radius:6px;margin-bottom:8px">' +
+        '<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">' + typeBadge + ' ' + scopeLabel + '</div>' +
+        '<div>' + val + '</div>' +
+        (comm.notes ? '<div style="font-size:11px;color:#888;margin-top:6px;padding-top:6px;border-top:1px solid #f5f5f5">' + comm.notes + '</div>' : '') +
+        '</div>';
+    }).join('');
+  }
+
+  const notesHTML = c.notes
+    ? '<div style="background:#f9f9f9;border-left:3px solid '+col.text+';padding:12px 16px;border-radius:0 6px 6px 0;margin-bottom:28px;font-size:13px;color:#444">' +
+      '<strong style="display:block;margin-bottom:4px;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#999">Notes</strong>' +
+      c.notes + '</div>'
+    : '';
+
+  const html = `<!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<title>${c.name} — Partner Profile</title>
+<title>${c.name} \u2014 Partner Profile</title>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Helvetica Neue', Arial, sans-serif; color: #1a1a2e; background: #fff; padding: 40px; }
-  @media print {
-    body { padding: 20px; }
-    .no-print { display: none; }
-  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:'Helvetica Neue',Arial,sans-serif; color:#1a1a2e; background:#fff; padding:40px; }
+  @media print { body { padding:20px; } .no-print { display:none; } }
 </style>
 </head>
 <body>
 
-  <!-- Header -->
   <div style="display:flex;align-items:center;gap:20px;padding-bottom:24px;border-bottom:3px solid ${col.text};margin-bottom:28px">
     <div style="width:64px;height:64px;border-radius:14px;background:${col.bg};border:2px solid ${col.border};display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:800;color:${col.text};flex-shrink:0">
       ${initials(c.name)}
     </div>
     <div style="flex:1">
       <h1 style="font-size:26px;font-weight:800;letter-spacing:-0.5px">${c.name}</h1>
-      <div style="font-size:13px;color:#666;margin-top:4px">
-        ${c.company_type||''}${c.country_of_origin?' · '+c.country_of_origin:''}
-        ${c.website?` · <a href="${c.website}" style="color:${col.text}">${c.website}</a>`:''}
-      </div>
+      <div style="font-size:13px;color:#666;margin-top:4px">${c.company_type||''}${c.country_of_origin?' \xb7 '+c.country_of_origin:''}${c.website?' \xb7 <a href="'+c.website+'" style="color:'+col.text+'">'+c.website+'</a>':''}</div>
     </div>
     <div style="text-align:right;flex-shrink:0">
       <div style="font-size:11px;color:#999;margin-bottom:4px">RELATIONSHIP STATUS</div>
@@ -374,10 +447,7 @@ function exportCompanyPDF(c) {
     </div>
   </div>
 
-  <!-- Two column info -->
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:28px">
-
-    <!-- Key Dates -->
     <div>
       <div style="font-size:11px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px">Key Dates</div>
       <table style="width:100%;font-size:13px">
@@ -386,8 +456,6 @@ function exportCompanyPDF(c) {
         <tr><td style="color:#666;padding:4px 0">Last Review</td><td style="font-weight:500">${formatDate(c.last_review_date)}</td></tr>
       </table>
     </div>
-
-    <!-- Contact -->
     <div>
       <div style="font-size:11px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px">Contact Person</div>
       <table style="width:100%;font-size:13px">
@@ -396,26 +464,26 @@ function exportCompanyPDF(c) {
         <tr><td style="color:#666;padding:4px 0">Phone</td><td style="font-weight:500">${c.contact_phone||'—'}</td></tr>
       </table>
     </div>
-
   </div>
 
-  ${c.notes?`
-  <div style="background:#f9f9f9;border-left:3px solid ${col.text};padding:12px 16px;border-radius:0 6px 6px 0;margin-bottom:28px;font-size:13px;color:#444">
-    <strong style="display:block;margin-bottom:4px;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#999">Notes</strong>
-    ${c.notes}
-  </div>`:''}
+  ${notesHTML}
 
-  <!-- Countries & Transactions -->
-  <div>
+  <div style="margin-bottom:28px">
     <div style="font-size:11px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:1px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #eee">
       Countries & Transaction Details (${(c.countries||[]).length} markets)
     </div>
-    ${ctRows || '<p style="color:#999;font-size:13px">No countries linked</p>'}
+    ${ctRows||'<p style="color:#999;font-size:13px">No countries linked</p>'}
   </div>
 
-  <!-- Footer -->
+  <div style="margin-bottom:28px">
+    <div style="font-size:11px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:1px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #eee">
+      Commission Structure
+    </div>
+    ${buildCommSection()}
+  </div>
+
   <div style="margin-top:40px;padding-top:16px;border-top:1px solid #eee;display:flex;justify-content:space-between;align-items:center">
-    <div style="font-size:11px;color:#999">Payporter FI Tracker — Confidential Internal Document</div>
+    <div style="font-size:11px;color:#999">Payporter FI Tracker \u2014 Confidential Internal Document</div>
     <div style="font-size:11px;color:#999">${c.name} Partner Profile</div>
   </div>
 

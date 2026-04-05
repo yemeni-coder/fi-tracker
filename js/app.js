@@ -512,41 +512,125 @@ function initCorridorPage() {
     window.ALL_COMPANIES.flatMap(c=>(c.countries||[])).map(co=>[co.name,co])
   ).values()].sort((a,b)=>a.name.localeCompare(b.name));
 
-  document.getElementById('corridor-to').innerHTML =
-    `<option value="">Select destination…</option>` +
-    linkedCountries.map(co=>`<option value="${co.name}">${co.flag} ${co.name}</option>`).join('');
-  document.getElementById('corridor-to').onchange = runCorridorSearch;
+  // Populate datalist
+  const datalist = document.getElementById('corridor-countries-list');
+  if (datalist) {
+    datalist.innerHTML = linkedCountries.map(co =>
+      `<option value="${co.flag} ${co.name}"></option>`
+    ).join('');
+  }
+
   document.getElementById('corridor-results').innerHTML =
     `<div class="empty-state"><div class="empty-icon">🌍</div><p>Select a destination country to see available partners</p></div>`;
+
+  // Bind input
+  const corridorInput = document.getElementById('corridor-to-input');
+  if (corridorInput) {
+    corridorInput.value = '';
+    const handler = () => {
+      const val = corridorInput.value.trim();
+      const match = linkedCountries.find(co => co.flag + ' ' + co.name === val || co.name === val);
+      if (match) runCorridorSearch(match.name);
+    };
+    corridorInput.addEventListener('change', handler);
+    corridorInput.addEventListener('input', handler);
+  }
+
+  // Search filter for corridor dropdown
+  const corridorSearch = document.getElementById('corridor-search');
+  const corridorSelect = document.getElementById('corridor-to');
+  if (corridorSearch && corridorSelect) {
+    corridorSearch.addEventListener('input', () => {
+      const q = corridorSearch.value.toLowerCase().trim();
+      const opts = corridorSelect.options;
+      let firstMatch = null;
+      for (let i = 1; i < opts.length; i++) {
+        const match = opts[i].text.toLowerCase().includes(q);
+        opts[i].style.display = match ? '' : 'none';
+        if (match && !firstMatch) firstMatch = opts[i].value;
+      }
+      // Auto-select if exact match
+      if (q.length >= 2 && firstMatch && corridorSelect.value !== firstMatch) {
+        const exactMatch = [...opts].find(o => o.text.toLowerCase() === q);
+        if (exactMatch) {
+          corridorSelect.value = exactMatch.value;
+          runCorridorSearch();
+        }
+      }
+    });
+    corridorSearch.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        // Select first visible option and run search
+        const opts = [...corridorSelect.options].filter(o => o.value && o.style.display !== 'none');
+        if (opts.length > 0) {
+          corridorSelect.value = opts[0].value;
+          runCorridorSearch();
+          corridorSearch.blur();
+        }
+      }
+    });
+  }
 }
 
-function runCorridorSearch() {
-  const destination = document.getElementById('corridor-to').value;
-  const res         = document.getElementById('corridor-results');
+async function runCorridorSearch(destination) {
+  if (!destination) {
+    const val = document.getElementById('corridor-to-input')?.value?.trim() || '';
+    const match = (window.ALL_COUNTRIES||[]).find(co => co.flag_emoji + ' ' + co.name === val || co.name === val);
+    destination = match?.name || '';
+  }
+  const res = document.getElementById('corridor-results');
   if (!destination) { res.innerHTML=`<div class="empty-state"><div class="empty-icon">🌍</div><p>Select a destination country to see available partners</p></div>`; return; }
   const partners  = window.ALL_COMPANIES.filter(c=>(c.countries||[]).some(co=>co.name===destination));
   if (!partners.length) { res.innerHTML=`<div class="empty-state"><div class="empty-icon">😔</div><p>No partners found for ${destination}</p></div>`; return; }
-  const active   = partners.filter(c=>['Sending & Receiving','Sending Only','Receiving Only'].includes(c.relationship_status));
+  const commMap = {};
+  await Promise.all(partners.map(async p => {
+    try { commMap[p.id] = await dbGetCommissions(p.id); } catch(e) { commMap[p.id] = []; }
+  }));
+  const destCountry = window.ALL_COUNTRIES.find(c=>c.name===destination);
+  function getBestComm(company) {
+    const comms = commMap[company.id]||[];
+    const specific = destCountry ? comms.find(cm=>cm.country_id===destCountry.id) : null;
+    return specific || comms.find(cm=>!cm.country_id) || null;
+  }
+  function sortVal(cm) {
+    if (!cm) return 999999;
+    if (cm.type==='tiered') return parseFloat(cm.tiers?.[0]?.value)||0;
+    return parseFloat(cm.value)||0;
+  }
+  function commLabel(cm) {
+    if (!cm) return '<span style="font-size:11px;color:var(--tx3);font-style:italic">No commission defined</span>';
+    const ov = destCountry && cm.country_id===destCountry.id;
+    let v='';
+    if (cm.type==='fixed') v='<strong>'+cm.value+' '+(cm.currency||'')+'</strong> <span style="color:var(--tx3)">'+(cm.unit||'').replace(/_/g,' ')+'</span>';
+    else if (cm.type==='percentage') v='<strong>'+cm.value+'%</strong> <span style="color:var(--tx3)">'+(cm.unit||'').replace(/_/g,' ')+'</span>';
+    else v='<strong>Tiered</strong> <span style="color:var(--tx3);font-size:10px">('+( cm.tiers?.length||0)+' tiers)</span>';
+    return '<span style="font-size:12px;color:var(--tx)">💰 '+v+(ov?' <span style="font-size:10px;color:var(--warn)">(country rate)</span>':'')+'</span>';
+  }
+  const cheapSort = arr => [...arr].sort((a,b)=>sortVal(getBestComm(a))-sortVal(getBestComm(b)));
+
+    const active   = partners.filter(c=>['Sending & Receiving','Sending Only','Receiving Only'].includes(c.relationship_status));
   const inprog   = partners.filter(c=>['Agreement Signed','On-boarding','Agreement in Progress'].includes(c.relationship_status));
   const pipeline = partners.filter(c=>['Pipeline','Under Discussion'].includes(c.relationship_status));
   const other    = partners.filter(c=>!active.includes(c)&&!inprog.includes(c)&&!pipeline.includes(c));
   const destFlag = window.ALL_COUNTRIES.find(c=>c.name===destination)?.flag_emoji||'🌍';
   const section  = (title,items) => items.length===0?'': `
     <div class="sec-label" style="margin-bottom:10px">${title} (${items.length})</div>
-    <div class="corridor-cards" style="margin-bottom:20px">${items.map(c=>buildCorridorCard(c,destination)).join('')}</div>`;
+    <div class="corridor-cards" style="margin-bottom:20px">${cheapSort(items).map(c=>buildCorridorCard(c,destination,commLabel(getBestComm(c)))).join('')}</div>`;
   res.innerHTML = `
     <div class="corridor-header">
       <div class="corridor-route">
         <div class="corridor-end"><span style="font-size:28px">🇹🇷</span><div><div class="corridor-end-name">Payporter</div><div class="corridor-end-sub">Turkey · Sender</div></div></div>
         <div class="corridor-route-arrow">→</div>
-        <div class="corridor-end"><span style="font-size:28px">${destFlag}</span><div><div class="corridor-end-name">${destination}</div><div class="corridor-end-sub">${partners.length} partner${partners.length!==1?'s':''}</div></div></div>
+        <div class="corridor-end"><span style="font-size:28px">${destFlag}</span><div><div class="corridor-end-name">${destination}</div><div class="corridor-end-sub">${partners.length} partner${partners.length!==1?'s':''} · cheapest first</div></div></div>
       </div>
     </div>
+    <div style="margin-top:10px"><button class="btn btn-ghost" id="corridor-pdf-btn" style="font-size:12px">🖨 Export PDF</button></div>
     ${section('● Active',active)}${section('◐ In Progress',inprog)}${section('◎ Pipeline',pipeline)}${section('Other',other)}`;
   res.querySelectorAll('.corridor-card').forEach(card=>card.addEventListener('click',()=>openCompanyDetail(+card.dataset.id)));
+  document.getElementById('corridor-pdf-btn')?.addEventListener('click',()=>exportCorridorPDF(destination,destFlag,partners,commMap,getBestComm));
 }
 
-function buildCorridorCard(c,destination) {
+function buildCorridorCard(c,destination,commLabelHTML) {
   const co=(c.countries||[]).find(x=>x.name===destination); if(!co) return '';
   const allCur=[...new Set((co.transactions||[]).flatMap(t=>t.currencies||[]))];
   const allTx=[...new Set((co.transactions||[]).map(t=>t.txType).filter(Boolean))];
@@ -561,6 +645,7 @@ function buildCorridorCard(c,destination) {
         <div class="corridor-detail-label">${co.flag} ${destination} ${co.direction?makeTag(dirLabel(co.direction),'t-dir'):''}</div>
         <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">${allCur.map(cu=>makeTag(cu,'t-cur')).join('')}${allTx.map(t=>makeTag(t,'t-type')).join('')}</div>
       </div>
+      <div style="padding:8px 0 2px;border-top:1px solid var(--border);margin-top:10px">${commLabelHTML||'<span style="font-size:11px;color:var(--tx3);font-style:italic">No commission defined</span>'}</div>
       <div class="corridor-card-footer"><span style="font-size:12px;color:var(--tx3)">Click to view full profile</span><span style="color:var(--accent);font-size:16px">›</span></div>
     </div>`;
 }
@@ -945,4 +1030,102 @@ function loadSavedTheme() {
     window.IS_DARK = saved === 'dark';
     applyTheme(saved);
   } catch(e) {}
+}
+
+/* ════════════════════════════════════════════════
+   CORRIDOR PDF EXPORT
+════════════════════════════════════════════════ */
+function exportCorridorPDF(destination, destFlag, partners, commMap, getBestComm) {
+  const date = new Date().toLocaleDateString('en-GB', {day:'2-digit', month:'long', year:'numeric'});
+
+  function sortVal(cm) {
+    if (!cm) return 999999;
+    if (cm.type==='tiered') return parseFloat(cm.tiers?.[0]?.value)||0;
+    return parseFloat(cm.value)||0;
+  }
+  const cheapSort = arr => [...arr].sort((a,b)=>sortVal(getBestComm(a))-sortVal(getBestComm(b)));
+
+  function commText(c) {
+    const cm = getBestComm(c);
+    if (!cm) return '<span style="color:#999;font-style:italic">Not defined</span>';
+    const ov = cm.country_id !== null;
+    let v='';
+    if (cm.type==='fixed') v='<strong>'+cm.value+' '+(cm.currency||'')+'</strong> '+(cm.unit||'').replace(/_/g,' ');
+    else if (cm.type==='percentage') v='<strong>'+cm.value+'%</strong> '+(cm.unit||'').replace(/_/g,' ');
+    else v='<strong>Tiered</strong> — from '+(cm.tiers?.[0]?.value||'?')+' '+(cm.tiers?.[0]?.currency||'');
+    return '\uD83D\uDCB0 '+v+(ov?' <span style="color:#e65100;font-size:10px">(country rate)</span>':'');
+  }
+
+  const active   = partners.filter(c=>['Sending & Receiving','Sending Only','Receiving Only'].includes(c.relationship_status));
+  const inprog   = partners.filter(c=>['Agreement Signed','On-boarding','Agreement in Progress'].includes(c.relationship_status));
+  const pipeline = partners.filter(c=>['Pipeline','Under Discussion'].includes(c.relationship_status));
+  const other    = partners.filter(c=>!active.includes(c)&&!inprog.includes(c)&&!pipeline.includes(c));
+
+  function buildRows(arr, label) {
+    if (!arr.length) return '';
+    const rows = cheapSort(arr).map((c, i) => {
+      const co = (c.countries||[]).find(x=>x.name===destination);
+      const allCur = [...new Set((co?.transactions||[]).flatMap(t=>t.currencies||[]))].join(', ')||'—';
+      const allTx  = [...new Set((co?.transactions||[]).map(t=>t.txType).filter(Boolean))].join(', ')||'—';
+      const bg = i%2===0?'#fff':'#f8f8fc';
+      return '<tr style="background:'+bg+'">'+
+        '<td style="padding:8px 10px;border-bottom:1px solid #eee;font-size:12px"><strong>'+c.name+'</strong></td>'+
+        '<td style="padding:8px 10px;border-bottom:1px solid #eee;font-size:11px;color:#555">'+allTx+'</td>'+
+        '<td style="padding:8px 10px;border-bottom:1px solid #eee;font-size:11px;font-weight:600;color:#2E5BBA">'+allCur+'</td>'+
+        '<td style="padding:8px 10px;border-bottom:1px solid #eee;font-size:11px">'+commText(c)+'</td>'+
+        '</tr>';
+    }).join('');
+    return '<div style="margin-bottom:20px">'+
+      '<div style="font-size:11px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:1px;padding:8px 10px;background:#f5f5f5;border-radius:4px 4px 0 0">'+label+' ('+arr.length+')</div>'+
+      '<table style="width:100%;border-collapse:collapse;font-family:Arial,sans-serif">'+
+      '<thead><tr style="background:#2E5BBA;color:white">'+
+      '<th style="padding:7px 10px;text-align:left;font-size:10px;width:22%">Company</th>'+
+      '<th style="padding:7px 10px;text-align:left;font-size:10px;width:22%">Transaction Types</th>'+
+      '<th style="padding:7px 10px;text-align:left;font-size:10px;width:18%">Currencies</th>'+
+      '<th style="padding:7px 10px;text-align:left;font-size:10px;width:38%">Commission</th>'+
+      '</tr></thead><tbody>'+rows+'</tbody></table></div>';
+  }
+
+  const summCards = [
+    ['Partners', partners.length],
+    ['Active', active.length],
+    ['In Progress', inprog.length],
+    ['Pipeline', pipeline.length]
+  ].map(([l,v]) =>
+    '<div style="flex:1;background:#EEF2FB;border-left:3px solid #2E5BBA;border-radius:4px;padding:8px 12px">'+
+    '<div style="font-size:18px;font-weight:800;color:#1A3A6B">'+v+'</div>'+
+    '<div style="font-size:10px;color:#666">'+l+'</div></div>'
+  ).join('');
+
+  const html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Corridor: '+destination+'</title>'+
+    '<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;color:#1a1a2e;background:#fff;padding:12mm 14mm}@media print{body{padding:8mm 10mm}}</style>'+
+    '</head><body>'+
+
+    '<div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;margin-bottom:14px;border-bottom:3px solid #1A3A6B">'+
+    '<div style="display:flex;align-items:center;gap:10px">'+
+    '<div style="width:34px;height:34px;background:#2E5BBA;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;color:white">FI</div>'+
+    '<div><div style="font-size:17px;font-weight:800;color:#1A3A6B">Corridor Report</div>'+
+    '<div style="font-size:10px;color:#666">\uD83C\uDDF9\uD83C\uDDF7 Turkey (Payporter) \u2192 '+destFlag+' '+destination+'</div></div></div>'+
+    '<div style="text-align:right;font-size:10px;color:#666">'+
+    '<div style="font-weight:700;color:#1A3A6B">Generated: '+date+'</div>'+
+    '<div style="color:#E53935;font-weight:700;margin-top:2px">CONFIDENTIAL</div></div></div>'+
+
+    '<div style="display:flex;gap:10px;margin-bottom:12px">'+summCards+'</div>'+
+    '<p style="font-size:11px;color:#888;margin-bottom:14px;font-style:italic">Sorted cheapest commission first. Partners with no commission defined appear last.</p>'+
+
+    buildRows(active,   '\u25CF Active')+
+    buildRows(inprog,   '\u25D0 In Progress')+
+    buildRows(pipeline, '\u25CE Pipeline')+
+    buildRows(other,    'Other')+
+
+    '<div style="margin-top:16px;padding-top:8px;border-top:1px solid #eee;display:flex;justify-content:space-between;font-size:9px;color:#999">'+
+    '<span>FI Tracker \u2014 Payporter \xb7 Corridor: '+destination+'</span>'+
+    '<span>\xa9 Payporter 2026 \u2014 All Rights Reserved</span></div>'+
+    '<script>window.onload=()=>window.print()<\/script>'+
+    '</body></html>';
+
+  const win = window.open('', '_blank');
+  if (!win) { showToast('\u26A0\uFE0F Please allow popups'); return; }
+  win.document.write(html);
+  win.document.close();
 }
