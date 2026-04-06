@@ -190,6 +190,8 @@ async function renderMyDesk() {
     const myWeek     = week.filter(a => a.user_email === myLabel || a.user_email === myEmail);
     const myPending  = allActs.filter(a => (a.user_email === myLabel || a.user_email === myEmail) && a.status === 'Pending');
     const myAssigned = window.ALL_COMPANIES.filter(c => c.assigned_to === myEmail || c.assigned_to === myLabel);
+    const myCountriesCount = new Set(myAssigned.flatMap(c => (c.countries||[]).map(x => x.name))).size;
+    const allCountriesCount = (window.ALL_COUNTRIES||[]).length;
 
     el.innerHTML = `
       <!-- Stats row -->
@@ -213,6 +215,16 @@ async function renderMyDesk() {
           <div class="stat-label">My Companies</div>
           <div class="stat-val">${myAssigned.length}</div>
           <div class="stat-sub">Assigned to me</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">My Countries</div>
+          <div class="stat-val" style="color:var(--accent)">${myCountriesCount}</div>
+          <div class="stat-sub">Countries I cover</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">All Countries</div>
+          <div class="stat-val">${allCountriesCount}</div>
+          <div class="stat-sub">Total in system</div>
         </div>
       </div>
 
@@ -512,11 +524,31 @@ async function renderWsLog() {
       return;
     }
 
-    el.innerHTML = `
-      <div style="font-size:12px;color:var(--tx3);margin-bottom:12px">${acts.length} activit${acts.length!==1?'ies':'y'}</div>
-      <div style="display:flex;flex-direction:column;gap:10px">
-        ${acts.map(a => wsActivityFullCard(a)).join('')}
+    // ── Group by month ──
+    const byMonth = {};
+    acts.forEach(a => {
+      const d = new Date(a.created_at || a.activity_date + 'T00:00:00');
+      const key = d.toLocaleDateString('en-GB', { month:'long', year:'numeric' });
+      if (!byMonth[key]) byMonth[key] = [];
+      byMonth[key].push(a);
+    });
+
+    let html = `<div style="font-size:12px;color:var(--tx3);margin-bottom:12px">${acts.length} activit${acts.length!==1?'ies':'y'}</div>`;
+    for (const [month, group] of Object.entries(byMonth)) {
+      html += `<div class="ws-month-grp" data-month="${month}" style="margin-bottom:20px">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r2);margin-bottom:10px">
+          <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px">${month}</div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:12px;color:var(--tx3)">${group.length} activities</span>
+            <button class="btn btn-ghost ws-del-month" data-month="${month}" style="font-size:11px;padding:4px 10px;color:var(--danger)">Delete Month</button>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          ${group.map(a => wsActivityFullCard(a)).join('')}
+        </div>
       </div>`;
+    }
+    el.innerHTML = html;
 
     el.querySelectorAll('.ws-act-edit').forEach(btn => {
       btn.addEventListener('click', e => { e.stopPropagation(); openActivityModal(+btn.dataset.id); });
@@ -526,10 +558,26 @@ async function renderWsLog() {
       btn.addEventListener('click', async e => {
         e.stopPropagation();
         if (!confirm('Delete this activity?')) return;
+        await wsLogDeletion({ actId: +btn.dataset.id, note: btn.dataset.note, company: btn.dataset.company });
         await wsDeleteActivity(+btn.dataset.id);
-        showToast('🗑 Deleted');
+        showToast('Deleted');
         renderWsLog();
         renderMyDesk();
+      });
+    });
+
+    el.querySelectorAll('.ws-del-month').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const month = btn.dataset.month;
+        if (!confirm(`Delete ALL activities for ${month}?`)) return;
+        const grp = el.querySelector(`.ws-month-grp[data-month="${month}"]`);
+        const delBtns = [...grp.querySelectorAll('.ws-act-delete')];
+        for (const b of delBtns) {
+          await wsLogDeletion({ actId: +b.dataset.id, note: b.dataset.note, company: b.dataset.company });
+          await wsDeleteActivity(+b.dataset.id);
+        }
+        showToast(`Deleted all activities for ${month}`);
+        renderWsLog(); renderMyDesk();
       });
     });
 
@@ -561,11 +609,13 @@ function wsActivityFullCard(a) {
                 ${overdue?`<span class="status-tag rs-suspended" style="font-size:10px">⚠️ Overdue</span>`:''}
               </div>
             </div>
-            ${isOwn?`
             <div style="display:flex;gap:4px;flex-shrink:0">
-              <button class="panel-btn ws-act-edit" data-id="${a.id}" style="width:26px;height:26px;font-size:11px">✏️</button>
-              <button class="panel-btn ws-act-delete" data-id="${a.id}" style="width:26px;height:26px;font-size:11px;color:var(--danger)">✕</button>
-            </div>`:''}
+              ${isOwn ? `<button class="panel-btn ws-act-edit" data-id="${a.id}" style="width:26px;height:26px;font-size:11px">✏️</button>` : ''}
+              <button class="panel-btn ws-act-delete" data-id="${a.id}"
+                data-note="${(a.note||'').replace(/"/g,'&quot;').replace(/`/g,'&#96;').slice(0,120)}"
+                data-company="${a.company_name||''}"
+                style="width:26px;height:26px;font-size:11px;color:var(--danger)">✕</button>
+            </div>
           </div>
           <div style="font-size:13px;color:var(--tx);line-height:1.5;padding:8px 12px;background:var(--bg);border-radius:var(--r1);border-left:3px solid var(--accent);margin-bottom:8px">
             ${a.note}
@@ -586,9 +636,48 @@ function wsActivityFullCard(a) {
 ════════════════════════════════════════════════ */
 window.WS_REVIEW = { companies: [], index: 0 };
 
-async function initWsReview() {
+async function initWsReview(scope) {
   const el = document.getElementById('ws-review-content');
   if (!el) return;
+
+  // Show scope selector if not chosen yet
+  if (!scope) {
+    const myLabel0 = window.CURRENT_USER_NAME
+      ? `${window.CURRENT_USER_NAME} (${window.CURRENT_USER_EMAIL})`
+      : window.CURRENT_USER_EMAIL;
+    const myCount = window.ALL_COMPANIES.filter(c =>
+      c.assigned_to === myLabel0 || c.assigned_to === window.CURRENT_USER_EMAIL
+    ).length;
+    el.innerHTML = `
+      <div style="max-width:400px;margin:0 auto;padding:10px 0">
+        <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:16px;margin-bottom:6px">Choose review scope</div>
+        <div style="font-size:13px;color:var(--tx3);margin-bottom:20px">Which companies do you want to walk through today?</div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <button class="rev-scope" data-scope="mine"
+            style="display:flex;align-items:center;gap:14px;padding:16px;border:2px solid var(--accent);border-radius:var(--r2);background:var(--ac-soft);cursor:pointer;text-align:left;width:100%">
+            <div style="font-size:26px">&#x1F464;</div>
+            <div>
+              <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;color:var(--accent)">My Companies</div>
+              <div style="font-size:12px;color:var(--tx3);margin-top:2px">${myCount} assigned to me</div>
+            </div>
+          </button>
+          <button class="rev-scope" data-scope="all"
+            style="display:flex;align-items:center;gap:14px;padding:16px;border:1px solid var(--border);border-radius:var(--r2);background:none;cursor:pointer;text-align:left;width:100%">
+            <div style="font-size:26px">&#x1F3E2;</div>
+            <div>
+              <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px">All Companies</div>
+              <div style="font-size:12px;color:var(--tx3);margin-top:2px">${window.ALL_COMPANIES.length} companies total</div>
+            </div>
+          </button>
+        </div>
+      </div>`;
+    el.querySelectorAll('.rev-scope').forEach(btn =>
+      btn.addEventListener('click', () => initWsReview(btn.dataset.scope))
+    );
+    return;
+  }
+
+  el.innerHTML = `<div class="loading-state"><div class="spinner"></div></div>`;
 
   const today     = new Date().toISOString().slice(0,10);
   const todayActs = await wsGetActivities({ limit: 1000 });
@@ -600,16 +689,15 @@ async function initWsReview() {
     ? `${window.CURRENT_USER_NAME} (${window.CURRENT_USER_EMAIL})`
     : window.CURRENT_USER_EMAIL;
 
-  // Show assigned companies first, then all others
-  const assigned  = window.ALL_COMPANIES.filter(c =>
+  const assigned = window.ALL_COMPANIES.filter(c =>
     (c.assigned_to === myLabel || c.assigned_to === window.CURRENT_USER_EMAIL) && !todayDone.has(c.id)
   );
-  const others    = window.ALL_COMPANIES.filter(c =>
+  const others = window.ALL_COMPANIES.filter(c =>
     c.assigned_to !== myLabel && c.assigned_to !== window.CURRENT_USER_EMAIL && !todayDone.has(c.id)
   );
-  const pending   = [...assigned, ...others];
+  const pending = scope === 'mine' ? assigned : [...assigned, ...others];
 
-  window.WS_REVIEW = { companies: pending, index: 0 };
+  window.WS_REVIEW = { companies: pending, index: 0, scope };
 
   if (!pending.length) {
     el.innerHTML = `
@@ -634,7 +722,8 @@ function renderWsReviewCard(allActs) {
         <div class="empty-icon">✅</div>
         <p style="font-size:16px;font-weight:600">Review complete!</p>
         <p style="font-size:13px;color:var(--tx3);margin-top:8px">You reviewed all ${companies.length} companies.</p>
-        <button class="btn btn-primary" style="margin-top:16px" onclick="initWsReview()">Start Again</button>
+        <button class="btn btn-primary" style="margin-top:16px" id="rev-restart">Start Again</button>
+        <button class="btn btn-ghost" style="margin-top:8px" id="rev-change">Change Scope</button>
       </div>`;
     return;
   }
@@ -694,6 +783,8 @@ function renderWsReviewCard(allActs) {
       </div>
     </div>`;
 
+  document.getElementById('rev-restart')?.addEventListener('click', () => initWsReview(window.WS_REVIEW?.scope || 'all'));
+  document.getElementById('rev-change')?.addEventListener('click', () => initWsReview());
   document.getElementById('review-log-btn').addEventListener('click', () =>
     openActivityModal(null, c.id, c.name)
   );
@@ -850,4 +941,87 @@ async function exportWsCSV() {
     document.body.removeChild(link); URL.revokeObjectURL(url);
     showToast('✓ Exported');
   } catch (err) { showToast('⚠️ ' + err.message); }
+}
+
+
+/* ════════════════════════════════════════════════
+   DELETION LOG (v1.2)
+════════════════════════════════════════════════ */
+async function wsLogDeletion(data) {
+  try {
+    await sbFetch('activity_log', {
+      method: 'POST',
+      body: JSON.stringify({
+        user_email:   window.CURRENT_USER_NAME
+          ? `${window.CURRENT_USER_NAME} (${window.CURRENT_USER_EMAIL})`
+          : window.CURRENT_USER_EMAIL || 'unknown',
+        action:       'DELETED_ACTIVITY',
+        company_name: data.company || null,
+        details:      data.note   || null,
+        company_id:   null
+      })
+    });
+  } catch(e) { console.warn('wsLogDeletion failed:', e); }
+}
+
+async function renderWsDeleted() {
+  const el = document.getElementById('ws-deleted-content');
+  if (!el) return;
+  el.innerHTML = `<div class="loading-state"><div class="spinner"></div></div>`;
+  try {
+    const logs = await sbFetch('activity_log?action=eq.DELETED_ACTIVITY&select=*&order=created_at.desc');
+    if (!logs || !logs.length) {
+      el.innerHTML = `<div class="empty-state"><div class="empty-icon">&#x1F5D1;</div><p>No deleted activities recorded yet</p></div>`;
+      return;
+    }
+    // Group by month
+    const byMonth = {};
+    logs.forEach(l => {
+      const d = new Date(l.created_at);
+      const key = d.toLocaleDateString('en-GB', { month:'long', year:'numeric' });
+      if (!byMonth[key]) byMonth[key] = [];
+      byMonth[key].push(l);
+    });
+    let html = `<div style="font-size:12px;color:var(--tx3);margin-bottom:12px">${logs.length} deletion record${logs.length!==1?'s':''}</div>`;
+    for (const [month, items] of Object.entries(byMonth)) {
+      html += `
+        <div style="margin-bottom:20px">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r2);margin-bottom:10px">
+            <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px">${month}</div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="font-size:12px;color:var(--tx3)">${items.length} records</span>
+              <button class="btn btn-ghost ws-clear-del-month" data-ids="${items.map(i=>i.id).join(',')}"
+                style="font-size:11px;padding:4px 10px;color:var(--danger)">Clear Month</button>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            ${items.map(l => {
+              const dt = new Date(l.created_at).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
+              return `<div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--r2);padding:12px 14px">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+                  ${l.company_name?`<span style="font-family:'Syne',sans-serif;font-weight:600;font-size:13px;color:var(--accent)">${l.company_name}</span>`:''}
+                  <span style="font-size:10px;padding:2px 7px;border-radius:20px;background:var(--danger)22;color:var(--danger);border:1px solid var(--danger)55">Deleted</span>
+                </div>
+                ${l.details?`<div style="font-size:13px;color:var(--tx);line-height:1.5;margin-bottom:6px">${l.details}</div>`:''}
+                <div style="font-size:11px;color:var(--tx3)">Deleted by ${l.user_email} &middot; ${dt}</div>
+              </div>`;
+            }).join('')}
+          </div>
+        </div>`;
+    }
+    el.innerHTML = html;
+    el.querySelectorAll('.ws-clear-del-month').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Clear these deletion records?')) return;
+        const ids = btn.dataset.ids.split(',').filter(Boolean);
+        for (const id of ids) {
+          await sbFetch(`activity_log?id=eq.${id}`, { method:'DELETE', prefer:'return=minimal' });
+        }
+        showToast('Records cleared');
+        renderWsDeleted();
+      });
+    });
+  } catch(err) {
+    el.innerHTML = `<p style="color:var(--danger)">Error: ${err.message}</p>`;
+  }
 }

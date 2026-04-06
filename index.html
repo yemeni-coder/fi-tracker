@@ -262,7 +262,7 @@
         <!-- WS LOG -->
         <div id="page-ws-log" class="page">
           <div class="page-head">
-            <div><h1 class="page-title">Activity Log</h1><p class="page-sub">All logged activities across the team</p></div>
+            <div><h1 class="page-title">Activities</h1><p class="page-sub">All activities — grouped by month</p></div>
             <div style="display:flex;gap:8px">
               <button class="btn btn-ghost" id="ws-log-export-btn" style="font-size:13px">↓ Export</button>
               <button class="btn btn-primary" id="ws-log-add-btn">+ Log Activity</button>
@@ -286,6 +286,15 @@
             <input class="filter-sel search-input" type="text" id="ws-log-filter-user" placeholder="Filter by person…" style="max-width:160px" />
           </div>
           <div id="ws-log-content"></div>
+        </div>
+
+
+        <!-- WS DELETED (v1.2) -->
+        <div id="page-ws-deleted" class="page">
+          <div class="page-head">
+            <div><h1 class="page-title">Deleted Activities</h1><p class="page-sub">Record of all deleted activities — grouped by month</p></div>
+          </div>
+          <div id="ws-deleted-content"></div>
         </div>
 
         <!-- WS REVIEW -->
