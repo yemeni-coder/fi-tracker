@@ -412,6 +412,7 @@ function buildBottomNav() {
     { page:'ws-desk',      label:'My Desk',   icon:'<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>' },
     { page:'ws-companies', label:'Companies', icon:'<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>' },
     { page:'ws-log',       label:'Activities', icon:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>' },
+    { page:'ws-notes',     label:'Notes',      icon:'<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>' },
     { page:'ws-deleted',   label:'Deleted',    icon:'<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/>' },
     { page:'ws-review',    label:'Review',    icon:'<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>' }
   ];
@@ -477,6 +478,8 @@ function navigateTo(page) {
   if (page==='ws-desk')     renderMyDesk();
   if (page==='ws-companies') { loadAdmins().then(() => renderWsCompanies()); }
   if (page==='ws-log')      renderWsLog();
+  if (page==='ws-notes')    renderWsNotes();
+  if (page==='ws-deleted')  renderWsDeleted();
   if (page==='ws-deleted')  renderWsDeleted();
   if (page==='ws-review')   initWsReview();
 }
@@ -1000,7 +1003,12 @@ function bindWorkspace() {
     document.getElementById(id)?.addEventListener('input', renderWsCompanies);
     document.getElementById(id)?.addEventListener('change', renderWsCompanies);
   });
-  ['ws-log-search','ws-log-filter-company','ws-log-filter-type','ws-log-filter-status','ws-log-filter-user'].forEach(id => {
+  ['ws-notes-search','ws-notes-filter-co'].forEach(id => {
+    document.getElementById(id)?.addEventListener('input', renderWsNotes);
+    document.getElementById(id)?.addEventListener('change', renderWsNotes);
+  });
+  document.getElementById('ws-add-note-btn')?.addEventListener('click', () => openNoteForm(null));
+  ['ws-log-search','ws-log-filter-company','ws-log-filter-type','ws-log-filter-status','ws-log-filter-user','ws-log-filter-assign'].forEach(id => {
     document.getElementById(id)?.addEventListener('input', renderWsLog);
     document.getElementById(id)?.addEventListener('change', renderWsLog);
   });

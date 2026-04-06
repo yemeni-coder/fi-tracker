@@ -193,81 +193,144 @@ async function renderMyDesk() {
     const myCountriesCount = new Set(myAssigned.flatMap(c => (c.countries||[]).map(x => x.name))).size;
     const allCountriesCount = (window.ALL_COUNTRIES||[]).length;
 
-    el.innerHTML = `
-      <!-- Stats row -->
-      <div class="stats-row" style="margin-bottom:20px">
-        <div class="stat-card ${myOverdue.length > 0 ? '' : ''}">
-          <div class="stat-label">Overdue</div>
-          <div class="stat-val" style="color:${myOverdue.length > 0 ? 'var(--danger)' : 'var(--ok)'}">${myOverdue.length}</div>
-          <div class="stat-sub">Need attention now</div>
+    // Build team overview
+    const admins = window.ALL_ADMINS || [];
+    const teamRows = admins.map(name => {
+      const count = window.ALL_COMPANIES.filter(c => c.assigned_to && c.assigned_to.includes(name.split(' ')[0])).length;
+      return `<div class="ws-team-row" data-name="${name}"
+        style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;
+        background:var(--bg);border:1px solid var(--border);border-radius:var(--r2);
+        cursor:pointer;transition:border-color var(--ease)">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="width:32px;height:32px;border-radius:50%;background:var(--ac-soft);
+            display:flex;align-items:center;justify-content:center;
+            font-family:'Syne',sans-serif;font-weight:700;font-size:13px;color:var(--accent)">
+            ${name[0].toUpperCase()}
+          </div>
+          <div>
+            <div style="font-size:13px;font-weight:600">${name}</div>
+            <div style="font-size:11px;color:var(--tx3)">${count} companies assigned</div>
+          </div>
         </div>
-        <div class="stat-card">
+        <span style="font-size:11px;color:var(--accent)">View activities ›</span>
+      </div>`;
+    }).join('');
+
+    el.innerHTML = `
+      <!-- Top 3 stat cards — all clickable -->
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px">
+        <div class="stat-card ws-desk-stat" data-filter="overdue"
+          style="cursor:pointer;border-left:3px solid ${myOverdue.length>0?'var(--danger)':'var(--ok)'};
+          transition:all var(--ease)">
+          <div class="stat-label">Overdue</div>
+          <div class="stat-val" style="color:${myOverdue.length>0?'var(--danger)':'var(--ok)'}">${myOverdue.length}</div>
+          <div class="stat-sub">Click to view in Activities</div>
+        </div>
+        <div class="stat-card ws-desk-stat" data-filter="pending"
+          style="cursor:pointer;transition:all var(--ease)">
           <div class="stat-label">Pending</div>
           <div class="stat-val">${myPending.length}</div>
-          <div class="stat-sub">Open follow-ups</div>
+          <div class="stat-sub">Click to view in Activities</div>
         </div>
-        <div class="stat-card">
+        <div class="stat-card ws-desk-stat" data-filter="week"
+          style="cursor:pointer;border-left:3px solid var(--ok);transition:all var(--ease)">
           <div class="stat-label">This Week</div>
           <div class="stat-val" style="color:var(--ok)">${myWeek.length}</div>
-          <div class="stat-sub">Activities logged</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">My Companies</div>
-          <div class="stat-val">${myAssigned.length}</div>
-          <div class="stat-sub">Assigned to me</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">My Countries</div>
-          <div class="stat-val" style="color:var(--accent)">${myCountriesCount}</div>
-          <div class="stat-sub">Countries I cover</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-label">All Countries</div>
-          <div class="stat-val">${allCountriesCount}</div>
-          <div class="stat-sub">Total in system</div>
+          <div class="stat-sub">Click to view in Activities</div>
         </div>
       </div>
 
-      <!-- Overdue section -->
+      <!-- My Companies card — goes to my companies only -->
+      <div class="dash-card ws-nav-myco"
+        style="cursor:pointer;border:1px solid var(--border);border-radius:var(--r3);
+        padding:20px;margin-bottom:16px;transition:all var(--ease)">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <div style="font-size:12px;font-weight:700;color:var(--tx3);text-transform:uppercase;letter-spacing:0.5px">My Companies</div>
+          <span style="font-size:12px;color:var(--accent)">View mine ›</span>
+        </div>
+        <div style="font-size:42px;font-weight:800;color:var(--accent);font-family:'Syne',sans-serif;line-height:1;margin-bottom:8px">${myAssigned.length}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          ${myAssigned.slice(0,5).map(c => `<span style="font-size:11px;padding:2px 10px;border-radius:20px;background:var(--bg3);color:var(--tx2)">${c.name}</span>`).join('')}
+          ${myAssigned.length>5?`<span style="font-size:11px;color:var(--tx3)">+${myAssigned.length-5} more</span>`:''}
+        </div>
+      </div>
+
+      <!-- Team overview -->
+      <div class="dash-card" style="margin-bottom:16px">
+        <div class="dash-title" style="margin-bottom:12px">👥 Team Overview</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          ${teamRows || '<p style="color:var(--tx3);font-size:13px">No admins found</p>'}
+        </div>
+      </div>
+
+      <!-- Overdue -->
       ${myOverdue.length > 0 ? `
-        <div class="dash-card" style="margin-bottom:16px">
+        <div class="dash-card" style="margin-bottom:16px;border-left:3px solid var(--danger)">
           <div class="dash-title" style="color:var(--danger)">⚠️ Overdue Follow-ups (${myOverdue.length})</div>
           <div style="display:flex;flex-direction:column;gap:8px">
             ${myOverdue.slice(0,5).map(a => wsActivityMiniCard(a)).join('')}
-            ${myOverdue.length > 5 ? `<div style="font-size:12px;color:var(--tx3);text-align:center">+${myOverdue.length-5} more in Log</div>` : ''}
+            ${myOverdue.length>5?`<div style="font-size:12px;color:var(--tx3);text-align:center">+${myOverdue.length-5} more</div>`:''}
           </div>
         </div>` : ''}
 
-      <!-- Weekly summary -->
-      <div class="dash-card" style="margin-bottom:16px">
+      <!-- This week -->
+      <div class="dash-card">
         <div class="dash-title">📅 This Week's Activity (${myWeek.length})</div>
         ${myWeek.length === 0
           ? `<p style="color:var(--tx3);font-size:13px">Nothing logged yet this week</p>`
           : `<div style="display:flex;flex-direction:column;gap:8px">
               ${myWeek.slice(0,5).map(a => wsActivityMiniCard(a)).join('')}
-              ${myWeek.length > 5 ? `<div style="font-size:12px;color:var(--tx3);text-align:center">+${myWeek.length-5} more in Log</div>` : ''}
+              ${myWeek.length>5?`<div style="font-size:12px;color:var(--tx3);text-align:center">+${myWeek.length-5} more</div>`:''}
              </div>`}
-      </div>
+      </div>`;
 
-      <!-- My pinned/assigned companies -->
-      ${myAssigned.length > 0 ? `
-        <div class="dash-card">
-          <div class="dash-title">🏢 My Companies (${myAssigned.length})</div>
-          <div style="display:flex;flex-direction:column;gap:8px">
-            ${myAssigned.slice(0,6).map(c => wsCompanyMiniCard(c, allActs)).join('')}
-          </div>
-        </div>` : ''}`;
-
-    // Bind company card clicks
-    el.querySelectorAll('.ws-co-mini').forEach(card => {
+    // Stat cards → navigate to Activities with filter
+    el.querySelectorAll('.ws-desk-stat').forEach(card => {
+      card.addEventListener('mouseenter', () => card.style.transform = 'translateY(-2px)');
+      card.addEventListener('mouseleave', () => card.style.transform = '');
       card.addEventListener('click', () => {
         navigateTo('ws-log');
-        // Filter log to this company
         setTimeout(() => {
-          const sel = document.getElementById('ws-log-filter-company');
-          if (sel) { sel.value = card.dataset.id; renderWsLog(); }
+          const f = card.dataset.filter;
+          const assign = document.getElementById('ws-log-filter-assign');
+          const status = document.getElementById('ws-log-filter-status');
+          if (assign) assign.value = 'me';
+          if (f === 'pending' && status) status.value = 'Pending';
+          renderWsLog();
         }, 100);
       });
+    });
+
+    // My Companies → ws-companies filtered to mine
+    el.querySelector('.ws-nav-myco')?.addEventListener('mouseenter', e => e.currentTarget.style.borderColor='var(--accent)');
+    el.querySelector('.ws-nav-myco')?.addEventListener('mouseleave', e => e.currentTarget.style.borderColor='var(--border)');
+    el.querySelector('.ws-nav-myco')?.addEventListener('click', () => {
+      navigateTo('ws-companies');
+      setTimeout(() => {
+        const myLabel3 = window.CURRENT_USER_NAME
+          ? `${window.CURRENT_USER_NAME} (${window.CURRENT_USER_EMAIL})`
+          : window.CURRENT_USER_EMAIL;
+        const sel = document.getElementById('ws-co-filter-assignee');
+        if (sel) { sel.value = myLabel3; renderWsCompanies(); }
+      }, 100);
+    });
+
+    // Team row → Activities filtered by that person
+    el.querySelectorAll('.ws-team-row').forEach(row => {
+      row.addEventListener('mouseenter', () => row.style.borderColor='var(--accent)');
+      row.addEventListener('mouseleave', () => row.style.borderColor='var(--border)');
+      row.addEventListener('click', () => {
+        navigateTo('ws-log');
+        setTimeout(() => {
+          const sel = document.getElementById('ws-log-filter-user');
+          if (sel) { sel.value = row.dataset.name; renderWsLog(); }
+        }, 100);
+      });
+    });
+
+    // Activity mini card clicks
+    el.querySelectorAll('.ws-co-mini').forEach(card => {
+      card.addEventListener('click', () => openCompanyDetail(+card.dataset.id));
     });
 
     // Bind activity card clicks → open edit
@@ -388,7 +451,7 @@ async function renderWsCompanies() {
             <div class="co-avatar" ${avatarStyle(c.name,38,9)}>${initials(c.name)}</div>
             <div style="flex:1;min-width:0">
               <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-                <div style="font-family:'Syne',sans-serif;font-weight:600;font-size:15px">${c.name}</div>
+                <div class="co-name-link" style="font-family:'Syne',sans-serif;font-weight:600;font-size:15px;cursor:pointer;color:var(--accent)">${c.name} <span style="font-size:11px;opacity:0.6">↗</span></div>
                 ${pinned ? `<span title="Pinned">📌</span>` : ''}
                 ${relStatusTag(c.relationship_status||'Pipeline')}
               </div>
@@ -418,15 +481,10 @@ async function renderWsCompanies() {
             </select>
           </div>
 
-          <!-- Last activity -->
-          ${last ? `
-            <div style="font-size:12px;color:var(--tx3);padding:8px 10px;background:var(--bg);border-radius:var(--r1)">
-              <span style="color:${overdue?'var(--danger)':'var(--tx2)'}">${overdue?'⚠️ Overdue · ':''}</span>
-              <span>${WS_ACTIVITY_ICONS[last.activity_type]||'📝'} ${last.note}</span>
-              <span style="color:var(--tx3)"> · ${wsFormatDate(last.activity_date)}</span>
-              ${last.follow_up_date?`<span style="color:${overdue?'var(--danger)':'var(--tx3)'}"> · Follow-up: ${wsFormatDate(last.follow_up_date)}</span>`:''}
-            </div>` : `
-            <div style="font-size:12px;color:var(--tx3);font-style:italic">No activity logged yet</div>`}
+          <!-- Last activity date only, clean -->
+          <div style="font-size:11px;color:var(--tx3)">
+            ${last ? `Last: ${wsFormatDate(last.activity_date)}` : 'No activity yet'}
+          </div>
         </div>`;
     }).join('');
 
@@ -443,9 +501,22 @@ async function renderWsCompanies() {
 
     // Bind log buttons
     el.querySelectorAll('.ws-log-btn').forEach(btn => {
-      btn.addEventListener('click', () =>
-        openActivityModal(null, +btn.dataset.id, btn.dataset.name)
-      );
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openActivityModal(null, +btn.dataset.id, btn.dataset.name);
+      });
+    });
+
+    // Click company name/avatar → open full FI Tracker detail panel
+    el.querySelectorAll('.ws-company-card').forEach(card => {
+      card.querySelector('.co-avatar')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openCompanyDetail(+card.dataset.id);
+      });
+      card.querySelector('.co-name-link')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openCompanyDetail(+card.dataset.id);
+      });
     });
 
     // Bind assign dropdowns
@@ -498,7 +569,8 @@ async function renderWsLog() {
     const filterCo    = document.getElementById('ws-log-filter-company')?.value || '';
     const filterSt    = document.getElementById('ws-log-filter-status')?.value || '';
     const filterType  = document.getElementById('ws-log-filter-type')?.value || '';
-    const filterUser  = document.getElementById('ws-log-filter-user')?.value || '';
+    const filterUser   = document.getElementById('ws-log-filter-user')?.value || '';
+    const filterAssign = document.getElementById('ws-log-filter-assign')?.value || '';
 
     // Populate company filter
     const coSel = document.getElementById('ws-log-filter-company');
@@ -510,13 +582,30 @@ async function renderWsLog() {
       });
     }
 
+    // Populate admin dropdown
+    const userSel = document.getElementById('ws-log-filter-user');
+    if (userSel && userSel.tagName === 'SELECT' && userSel.options.length <= 1) {
+      (window.ALL_ADMINS || []).forEach(name => {
+        const opt = document.createElement('option');
+        opt.value = name; opt.textContent = name;
+        userSel.appendChild(opt);
+      });
+    }
+
+    const myLabel2 = window.CURRENT_USER_NAME
+      ? `${window.CURRENT_USER_NAME} (${window.CURRENT_USER_EMAIL})`
+      : window.CURRENT_USER_EMAIL;
+
     let acts = allActs.filter(a => {
       const matchSearch = !search || a.note?.toLowerCase().includes(search) || a.company_name?.toLowerCase().includes(search);
       const matchCo     = !filterCo   || a.company_id === +filterCo;
       const matchSt     = !filterSt   || a.status === filterSt;
       const matchType   = !filterType || a.activity_type === filterType;
-      const matchUser   = !filterUser || a.user_email?.toLowerCase().includes(filterUser.toLowerCase());
-      return matchSearch && matchCo && matchSt && matchType && matchUser;
+      const matchUser   = !filterUser || a.user_email?.includes(filterUser);
+      const matchAssign = !filterAssign
+        || (filterAssign === 'me' && (a.user_email === myLabel2 || a.user_email === window.CURRENT_USER_EMAIL))
+        || (filterAssign === 'others' && a.user_email !== myLabel2 && a.user_email !== window.CURRENT_USER_EMAIL);
+      return matchSearch && matchCo && matchSt && matchType && matchUser && matchAssign;
     });
 
     if (!acts.length) {

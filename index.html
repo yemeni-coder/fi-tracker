@@ -283,9 +283,42 @@
               <option value="">All statuses</option>
               <option>Pending</option><option>Completed</option><option>Cancelled</option>
             </select>
-            <input class="filter-sel search-input" type="text" id="ws-log-filter-user" placeholder="Filter by person…" style="max-width:160px" />
+            <select class="filter-sel" id="ws-log-filter-user">
+              <option value="">All people</option>
+            </select>
+            <select class="filter-sel" id="ws-log-filter-assign">
+              <option value="">All</option>
+              <option value="me">Mine</option>
+              <option value="others">Others</option>
+            </select>
           </div>
           <div id="ws-log-content"></div>
+        </div>
+
+
+        <!-- WS DELETED -->
+        <div id="page-ws-deleted" class="page">
+          <div class="page-head">
+            <div><h1 class="page-title">Deleted Activities</h1><p class="page-sub">Record of all deleted activities — grouped by month</p></div>
+          </div>
+          <div id="ws-deleted-content"></div>
+        </div>
+
+
+        <!-- WS NOTES -->
+        <div id="page-ws-notes" class="page">
+          <div class="page-head">
+            <div><h1 class="page-title">My Notes</h1><p class="page-sub">Personal knowledge base — only visible to you</p></div>
+            <button class="btn btn-primary" id="ws-add-note-btn">+ New Note</button>
+          </div>
+          <div class="search-row">
+            <div class="search-wrap">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input class="search-input" type="text" id="ws-notes-search" placeholder="Search notes…" />
+            </div>
+            <select class="filter-sel" id="ws-notes-filter-co"><option value="">All companies</option></select>
+          </div>
+          <div id="ws-notes-content"></div>
         </div>
 
 
@@ -568,6 +601,7 @@
   <script src="js/contacts.js"></script>
   <script src="js/commissions.js"></script>
   <script src="js/workspace.js"></script>
+  <script src="js/notes.js"></script>
   <script src="js/report.js"></script>
   <script src="js/app.js"></script>
 </body>
