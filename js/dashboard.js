@@ -1,6 +1,7 @@
 /* ════════════════════════════════════════════════
    js/dashboard.js
-   Interactive dashboard + activity log + top countries
+   FI Tracker Dashboard — shows ONLY company/country data
+   (Workspace data removed — belongs in FI Workspace)
 ════════════════════════════════════════════════ */
 
 function renderDashboard() {
@@ -22,22 +23,12 @@ function renderDashboard() {
     </button>`;
   document.getElementById('export-excel-btn').addEventListener('click', exportToExcel);
 
-  /* ── Stat cards ── */
+  /* ── Stat cards — FI Tracker only (no Workspace data) ── */
   document.getElementById('dash-stats').innerHTML = `
     <div class="stat-card stat-clickable" data-dash="all-companies">
       <div class="stat-label">Total Partners</div>
       <div class="stat-val">${cos.length}</div>
       <div class="stat-sub">Click to view all →</div>
-    </div>
-    <div class="stat-card" style="cursor:pointer" onclick="navigateTo('activities')">
-      <div class="stat-label">Overdue Follow-ups</div>
-      <div class="stat-val" id="dash-overdue-count" style="color:var(--tx3)">—</div>
-      <div class="stat-sub">Click to view activities →</div>
-    </div>
-    <div class="stat-card" style="cursor:pointer" onclick="navigateTo('activities')">
-      <div class="stat-label">Logged Today</div>
-      <div class="stat-val" id="dash-today-count" style="color:var(--tx3)">—</div>
-      <div class="stat-sub">Activities today →</div>
     </div>
     <div class="stat-card stat-clickable" data-dash="active-companies">
       <div class="stat-label">Active Partners</div>
@@ -147,114 +138,9 @@ function renderDashboard() {
             <div class="tx-label">${k}</div>
           </div>`).join('')}
       </div>
-    </div>
-
-    <div class="dash-card full" id="activity-log-card">
-      <div class="dash-title">Recent Activity</div>
-      <div id="activity-log-content">
-        <div class="loading-state" style="padding:20px"><div class="spinner"></div></div>
-      </div>
     </div>`;
 
   bindDashboardClicks();
-  loadActivityLog();
-
-  // Show/hide overdue section based on count
-  updateDashboardStats().then(() => {
-    const count  = +document.getElementById('dash-overdue-count')?.textContent || 0;
-    const wrap   = document.getElementById('dash-overdue-wrap');
-    if (wrap) wrap.style.display = count > 0 ? 'block' : 'none';
-  });
-}
-
-/* ════════════════════════════════════════════════
-   ACTIVITY LOG
-════════════════════════════════════════════════ */
-async function loadActivityLog() {
-  try {
-    const logs = await dbGetActivityLog(500);
-    const el   = document.getElementById('activity-log-content');
-    if (!logs || logs.length === 0) {
-      el.innerHTML = `<p style="color:var(--tx3);font-size:13px">No activity recorded yet</p>`;
-      return;
-    }
-
-    // Exclude workspace deletion records
-    const filtered = logs.filter(l => l.action !== 'DELETED_ACTIVITY');
-
-    const actionIcon = { 'added':'➕', 'updated':'✏️', 'deleted':'🗑' };
-
-    // Group by month
-    const byMonth = {};
-    filtered.forEach(log => {
-      const d = new Date(log.created_at);
-      const key = d.toLocaleDateString('en-GB', { month:'long', year:'numeric' });
-      if (!byMonth[key]) byMonth[key] = [];
-      byMonth[key].push(log);
-    });
-
-    let html = '';
-    for (const [month, items] of Object.entries(byMonth)) {
-      html += `
-        <div style="margin-bottom:16px">
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r2);margin-bottom:8px">
-            <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:13px">${month}</div>
-            <div style="display:flex;align-items:center;gap:8px">
-              <span style="font-size:12px;color:var(--tx3)">${items.length} changes</span>
-              <button class="btn btn-ghost dash-clear-month" data-ids="${items.map(i=>i.id).join(',')}"
-                style="font-size:11px;padding:3px 8px;color:var(--danger)">Clear</button>
-            </div>
-          </div>
-          <div style="display:flex;flex-direction:column;gap:0">
-            ${items.map(log => `
-              <div class="activity-row">
-                <div class="activity-icon">${actionIcon[log.action] || '•'}</div>
-                <div style="flex:1;min-width:0">
-                  <div style="font-size:13px;font-weight:500">
-                    <span style="color:var(--accent)">${log.company_name || '—'}</span>
-                    <span style="color:var(--tx2)"> was ${log.action}</span>
-                    ${log.details ? `<span style="color:var(--tx3);font-size:12px"> · ${log.details}</span>` : ''}
-                  </div>
-                  <div style="font-size:11px;color:var(--tx3);margin-top:2px">
-                    by ${log.user_email} · ${formatActivityTime(log.created_at)}
-                  </div>
-                </div>
-              </div>`).join('')}
-          </div>
-        </div>`;
-    }
-
-    el.innerHTML = html || `<p style="color:var(--tx3);font-size:13px">No activity recorded yet</p>`;
-
-    el.querySelectorAll('.dash-clear-month').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const monthEl = btn.closest('[style*="margin-bottom:16px"]').querySelector('[style*="font-weight:700"]');
-        const month = monthEl ? monthEl.textContent.trim() : 'this month';
-        if (!confirm(`Clear activity log for ${month}?`)) return;
-        const ids = btn.dataset.ids.split(',').filter(Boolean);
-        for (const id of ids) {
-          await sbFetch(`activity_log?id=eq.${id}`, { method:'DELETE', prefer:'return=minimal' });
-        }
-        showToast(`Cleared ${month}`);
-        loadActivityLog();
-      });
-    });
-
-  } catch (e) {
-    document.getElementById('activity-log-content').innerHTML =
-      `<p style="color:var(--tx3);font-size:13px">Could not load activity log</p>`;
-  }
-}
-
-function formatActivityTime(ts) {
-  if (!ts) return '—';
-  const d    = new Date(ts);
-  const now  = new Date();
-  const diff = Math.floor((now - d) / 1000);
-  if (diff < 60)   return 'just now';
-  if (diff < 3600) return `${Math.floor(diff/60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff/3600)}h ago`;
-  return d.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
 }
 
 /* ════════════════════════════════════════════════
