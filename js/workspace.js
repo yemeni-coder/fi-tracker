@@ -292,9 +292,7 @@ async function renderMyDesk() {
         navigateTo('ws-log');
         setTimeout(() => {
           const f = card.dataset.filter;
-          const assign = document.getElementById('ws-log-filter-assign');
           const status = document.getElementById('ws-log-filter-status');
-          if (assign) assign.value = 'me';
           if (f === 'pending' && status) status.value = 'Pending';
           renderWsLog();
         }, 100);
@@ -446,7 +444,7 @@ async function renderWsCompanies() {
       const assigned = c.assigned_to || '';
 
       return `
-        <div class="ws-company-card ${overdue ? 'ws-overdue' : ''}">
+        <div class="ws-company-card ${overdue ? 'ws-overdue' : ''}" data-id="${c.id}">
           <div class="card-top" style="margin-bottom:10px">
             <div class="co-avatar" ${avatarStyle(c.name,38,9)}>${initials(c.name)}</div>
             <div style="flex:1;min-width:0">
@@ -507,8 +505,20 @@ async function renderWsCompanies() {
       });
     });
 
-    // Click company name/avatar → open full FI Tracker detail panel
+    // Click anywhere on the card → open full FI Tracker detail panel
     el.querySelectorAll('.ws-company-card').forEach(card => {
+      // Add click handler to the entire card
+      card.addEventListener('click', (e) => {
+        // Don't open if clicking on buttons or selects
+        if (e.target.closest('.ws-log-btn') || 
+            e.target.closest('.ws-pin-btn') || 
+            e.target.closest('.ws-assign-sel')) {
+          return;  // Let those buttons do their job
+        }
+        openCompanyDetail(+card.dataset.id);
+      });
+      
+      // Keep existing handlers for specific elements (they'll stop propagation)
       card.querySelector('.co-avatar')?.addEventListener('click', (e) => {
         e.stopPropagation();
         openCompanyDetail(+card.dataset.id);
@@ -569,8 +579,7 @@ async function renderWsLog() {
     const filterCo    = document.getElementById('ws-log-filter-company')?.value || '';
     const filterSt    = document.getElementById('ws-log-filter-status')?.value || '';
     const filterType  = document.getElementById('ws-log-filter-type')?.value || '';
-    const filterUser   = document.getElementById('ws-log-filter-user')?.value || '';
-    const filterAssign = document.getElementById('ws-log-filter-assign')?.value || '';
+    const filterUser  = document.getElementById('ws-log-filter-user')?.value || '';
 
     // Populate company filter
     const coSel = document.getElementById('ws-log-filter-company');
@@ -592,20 +601,13 @@ async function renderWsLog() {
       });
     }
 
-    const myLabel2 = window.CURRENT_USER_NAME
-      ? `${window.CURRENT_USER_NAME} (${window.CURRENT_USER_EMAIL})`
-      : window.CURRENT_USER_EMAIL;
-
     let acts = allActs.filter(a => {
       const matchSearch = !search || a.note?.toLowerCase().includes(search) || a.company_name?.toLowerCase().includes(search);
       const matchCo     = !filterCo   || a.company_id === +filterCo;
       const matchSt     = !filterSt   || a.status === filterSt;
       const matchType   = !filterType || a.activity_type === filterType;
       const matchUser   = !filterUser || a.user_email?.includes(filterUser);
-      const matchAssign = !filterAssign
-        || (filterAssign === 'me' && (a.user_email === myLabel2 || a.user_email === window.CURRENT_USER_EMAIL))
-        || (filterAssign === 'others' && a.user_email !== myLabel2 && a.user_email !== window.CURRENT_USER_EMAIL);
-      return matchSearch && matchCo && matchSt && matchType && matchUser && matchAssign;
+      return matchSearch && matchCo && matchSt && matchType && matchUser;
     });
 
     if (!acts.length) {
