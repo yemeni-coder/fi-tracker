@@ -72,30 +72,83 @@
       </div>
       <div class="nav-actions">
         <button class="theme-btn" id="theme-toggle">☀️</button>
-        <span class="nav-identity" id="role-badge">Viewer</span>
 
-        <!-- Switch to FI Organizer — admin only, hidden by default -->
-        <button class="btn btn-ghost nav-switch-btn" id="organizer-switch-btn" style="display:none" title="Switch to FI Organizer">
+        <!-- Switch to FI Workspace — admin only -->
+        <button class="btn btn-ghost nav-switch-btn" id="organizer-switch-btn" style="display:none" title="Switch to FI Workspace">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
           FI Workspace
         </button>
 
-        <!-- Dropdown Add button — admin only -->
-        <div class="nav-add-wrap" id="nav-add-wrap" style="display:none">
-          <button class="btn btn-primary nav-add-btn" id="nav-add-btn">
-            + Add
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-left:4px"><polyline points="6 9 12 15 18 9"/></svg>
+        <!-- Combined User Menu (Add + Sign out + Notes + Deleted + Management) -->
+        <div style="position:relative;display:inline-block" id="user-menu-wrap">
+          <button class="btn btn-primary" id="user-menu-btn" style="display:flex;align-items:center;gap:6px">
+            <span id="user-menu-name">Account</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
-          <div class="nav-add-dropdown" id="nav-add-dropdown">
-            <button class="nav-add-item" id="add-btn">🏢 Add Company</button>
-            <button class="nav-add-item" id="add-country-page-btn">🌍 Add Country</button>
+          <div id="user-menu-dropdown" style="
+            display:none;position:absolute;right:0;top:calc(100% + 6px);
+            background:var(--bg3);border:1px solid var(--border);border-radius:var(--r2);
+            box-shadow:0 8px 24px rgba(0,0,0,0.12);min-width:200px;z-index:999;
+            padding:6px;flex-direction:column;gap:2px">
+            
+            <!-- Add Company -->
+            <button class="user-menu-item" id="add-btn" style="
+              align-items:center;gap:10px;padding:9px 12px;border-radius:var(--r1);
+              border:none;background:none;cursor:pointer;font-size:13px;color:var(--tx);text-align:left;width:100%">
+              🏢 Add Company
+            </button>
+            
+            <!-- Add Country -->
+            <button class="user-menu-item" id="add-country-page-btn" style="
+              align-items:center;gap:10px;padding:9px 12px;border-radius:var(--r1);
+              border:none;background:none;cursor:pointer;font-size:13px;color:var(--tx);text-align:left;width:100%">
+              🌍 Add Country
+            </button>
+            
+            <div style="height:1px;background:var(--border);margin:4px 0"></div>
+            
+            <!-- Notes (Workspace only) -->
+            <button class="user-menu-item" data-action="nav" data-page="ws-notes" id="menu-notes-btn" style="display:none;
+              align-items:center;gap:10px;padding:9px 12px;border-radius:var(--r1);
+              border:none;background:none;cursor:pointer;font-size:13px;color:var(--tx);text-align:left;width:100%">
+              📝 My Notes
+            </button>
+            
+            <!-- Deleted Activities (Workspace only) -->
+            <button class="user-menu-item" data-action="nav" data-page="ws-deleted" id="menu-deleted-btn" style="display:none;
+              align-items:center;gap:10px;padding:9px 12px;border-radius:var(--r1);
+              border:none;background:none;cursor:pointer;font-size:13px;color:var(--tx);text-align:left;width:100%">
+              🗑 Deleted Activities
+            </button>
+            
+            <!-- Management — Mohammed only -->
+            <div id="menu-mgmt-divider" style="display:none;height:1px;background:var(--border);margin:4px 0"></div>
+            <button class="user-menu-item" data-action="nav" data-page="management" id="menu-mgmt-btn" style="display:none;
+              align-items:center;gap:10px;padding:9px 12px;border-radius:var(--r1);
+              border:none;background:none;cursor:pointer;font-size:13px;color:var(--tx);text-align:left;width:100%">
+              ⚙️ Management
+            </button>
+            
+            <div style="height:1px;background:var(--border);margin:4px 0"></div>
+            
+            <!-- Sign out -->
+            <button class="user-menu-item" data-action="signout" style="
+              align-items:center;gap:10px;padding:9px 12px;border-radius:var(--r1);
+              border:none;background:none;cursor:pointer;font-size:13px;color:var(--danger);text-align:left;width:100%">
+              Sign out
+            </button>
           </div>
         </div>
-
-        <button class="btn btn-ghost" id="logout-btn" style="font-size:13px">Sign out</button>
       </div>
     </nav>
 
+    <!-- MANAGEMENT — Mohammed only -->
+    <div id="page-management" class="page">
+      <div class="page-head">
+        <div><h1 class="page-title">Management</h1><p class="page-sub">User access, data control and system settings</p></div>
+      </div>
+      <div id="mgmt-content"><div class="loading-state"><div class="spinner"></div></div></div>
+    </div>
 
     <!-- MOBILE HEADER — visible on small screens only -->
     <div id="mobile-header">
@@ -290,9 +343,6 @@
           <div id="ws-log-content"></div>
         </div>
 
-
-
-
         <!-- WS NOTES -->
         <div id="page-ws-notes" class="page">
           <div class="page-head">
@@ -309,16 +359,13 @@
           <div id="ws-notes-content"></div>
         </div>
 
-
-        <!-- WS DELETED (v1.2) -->
+        <!-- WS DELETED -->
         <div id="page-ws-deleted" class="page">
           <div class="page-head">
             <div><h1 class="page-title">Deleted Activities</h1><p class="page-sub">Record of all deleted activities — grouped by month</p></div>
           </div>
           <div id="ws-deleted-content"></div>
         </div>
-
-  
 
         <!-- WS REVIEW -->
         <div id="page-ws-review" class="page">
@@ -334,21 +381,124 @@
           </div>
         </div>
 
+        <!-- WS CALENDAR -->
+        <div id="page-ws-calendar" class="page">
+          <div class="page-head">
+            <div><h1 class="page-title">Event Calendar</h1><p class="page-sub">Manage events, holidays, meetings, and deadlines</p></div>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-ghost" id="calendar-today-btn" style="font-size:13px">📅 Today</button>
+            </div>
+          </div>
+          <div id="calendar-container">
+            <div class="loading-state"><div class="spinner"></div><p>Loading calendar...</p></div>
+          </div>
+        </div>
+
       </div>
     </div>
 
-    <!-- DETAIL PANEL -->
+    <!-- DETAIL PANEL (Company Detail) -->
     <div class="overlay" id="overlay">
       <div class="panel">
         <div class="panel-head">
           <div class="panel-avatar" id="p-avatar">?</div>
-          <div class="panel-info"><div class="panel-name" id="p-name">—</div><div class="panel-type" id="p-type">—</div></div>
+          <div class="panel-info">
+            <div class="panel-name" id="p-name">—</div>
+            <div class="panel-type" id="p-type">—</div>
+          </div>
           <div class="panel-actions">
             <button class="panel-btn" id="p-edit" title="Edit">✏️</button>
             <button class="panel-btn" id="p-close">✕</button>
           </div>
         </div>
         <div class="panel-body" id="panel-body"></div>
+      </div>
+    </div>
+
+    <!-- DAY VIEW PANEL - shows events for a selected date -->
+    <div class="overlay" id="day-view-overlay">
+      <div class="panel">
+        <div class="panel-head">
+          <div class="panel-avatar" id="day-view-avatar">📅</div>
+          <div class="panel-info">
+            <div class="panel-name" id="day-view-date">—</div>
+            <div class="panel-type" id="day-view-sub">Select a date to see events</div>
+          </div>
+          <div class="panel-actions">
+            <button class="panel-btn" id="day-view-add-btn" title="Add Event">+</button>
+            <button class="panel-btn" id="day-view-close">✕</button>
+          </div>
+        </div>
+        <div class="panel-body" id="day-view-body">
+          <div class="loading-state"><div class="spinner"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- EVENT MODAL (Add/Edit Event) -->
+    <div class="mod-overlay" id="event-modal-overlay">
+      <div class="modal" style="max-width:480px">
+        <div class="mod-title" id="event-modal-title">Add Event</div>
+        <div class="mod-sub" id="event-modal-sub">Schedule an event</div>
+        <input type="hidden" id="event-id" />
+
+        <div class="form-group">
+          <label class="form-label">Event Name *</label>
+          <input class="form-input" type="text" id="event-name" placeholder="e.g. Eid al-Fitr, Team Meeting, Report Due" />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Date *</label>
+          <input class="form-input" type="date" id="event-date" />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Event Type</label>
+          <select class="form-select" id="event-type">
+            <option value="holiday">🎉 Holiday</option>
+            <option value="meeting">📅 Meeting</option>
+            <option value="deadline">⏰ Deadline</option>
+            <option value="travel">✈️ Travel</option>
+            <option value="reminder">📝 Reminder</option>
+            <option value="other">📌 Other (custom)</option>
+          </select>
+        </div>
+
+        <div class="form-group" id="event-custom-type-wrap" style="display:none">
+          <label class="form-label">Custom Type Name</label>
+          <input class="form-input" type="text" id="event-custom-type" placeholder="e.g. Conference, Training, Review" />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Reminder (days before)</label>
+          <select class="form-select" id="event-reminder">
+            <option value="1">1 day before</option>
+            <option value="3">3 days before</option>
+            <option value="5" selected>5 days before</option>
+            <option value="7">7 days before</option>
+            <option value="10">10 days before</option>
+            <option value="14">14 days before</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Notes (optional)</label>
+          <textarea class="form-textarea" id="event-notes" rows="2" placeholder="Additional details..."></textarea>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Repeat yearly?</label>
+          <div style="display:flex;align-items:center;gap:10px">
+            <input type="checkbox" id="event-recurring" style="width:18px;height:18px;cursor:pointer" />
+            <label for="event-recurring" style="cursor:pointer">Repeat every year on this date</label>
+          </div>
+        </div>
+
+        <div class="mod-actions">
+          <button class="btn btn-danger" id="event-delete-btn" style="display:none">Delete</button>
+          <button class="btn btn-ghost" id="event-cancel-btn">Cancel</button>
+          <button class="btn btn-primary" id="event-save-btn">Save Event</button>
+        </div>
       </div>
     </div>
 
@@ -508,7 +658,6 @@
       </div>
     </div>
 
-
     <!-- WORKSPACE ACTIVITY MODAL -->
     <div class="mod-overlay" id="ws-activity-overlay">
       <div class="modal" style="max-width:500px">
@@ -593,6 +742,8 @@
   <script src="js/workspace.js"></script>
   <script src="js/notes.js"></script>
   <script src="js/report.js"></script>
+  <script src="js/management.js"></script>
+  <script src="js/calendar.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

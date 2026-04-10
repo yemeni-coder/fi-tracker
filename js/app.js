@@ -118,8 +118,6 @@ function bindLogin() {
   });
 }
 
-
-
 async function handleLogin() {
   const email    = document.getElementById('login-email').value.trim();
   const password = document.getElementById('login-password').value;
@@ -213,6 +211,9 @@ async function showApp() {
   initObservations();
   bindWorkspace();
   await loadAdmins();
+  
+  // Initialize user menu after everything is loaded
+  initUserMenu();
 }
 
 /* ════════════════════════════════════════════════
@@ -225,30 +226,9 @@ function applyRoleUI() {
   const fabMob = document.getElementById('add-btn-mob');
   if (fabMob) fabMob.style.display = isAdmin ? '' : 'none';
 
-  // Dropdown Add button — admin only
-  const addWrap = document.getElementById('nav-add-wrap');
-  if (addWrap) addWrap.style.display = isAdmin ? '' : 'none';
-
   // Switch to Organizer — admin only
   const switchBtn = document.getElementById('organizer-switch-btn');
   if (switchBtn) switchBtn.style.display = isAdmin ? '' : 'none';
-
-  // Nav identity — greeting for viewers, name for admins
-  const badge = document.getElementById('role-badge');
-  if (badge) {
-    const name = window.CURRENT_USER_NAME || (isAdmin ? 'Admin' : 'Viewer');
-    if (isAdmin) {
-      badge.textContent = `${name} · Admin`;
-    } else {
-      const hour     = new Date().getHours();
-      const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
-      badge.textContent = `${greeting}, ${name} 👋`;
-    }
-    badge.title = window.CURRENT_USER_EMAIL;
-  }
-
-  // Bind dropdown Add button
-  bindAddDropdown();
 
   // Bind switch button (desktop)
   document.getElementById('organizer-switch-btn')?.addEventListener('click', openOrganizerSwitch);
@@ -309,33 +289,6 @@ function updateMobileSwitchLabel() {
   }
 }
 
-function bindAddDropdown() {
-  const btn      = document.getElementById('nav-add-btn');
-  const dropdown = document.getElementById('nav-add-dropdown');
-  if (!btn || !dropdown) return;
-
-  btn.addEventListener('click', e => {
-    e.stopPropagation();
-    dropdown.classList.toggle('open');
-  });
-
-  // Close on outside click — use capture to avoid interfering with other clicks
-  document.addEventListener('click', e => {
-    if (!btn.contains(e.target) && !dropdown.contains(e.target)) {
-      dropdown.classList.remove('open');
-    }
-  });
-
-  document.getElementById('add-btn')?.addEventListener('click', () => {
-    dropdown.classList.remove('open');
-    openAddModal();
-  });
-  document.getElementById('add-country-page-btn')?.addEventListener('click', () => {
-    dropdown.classList.remove('open');
-    openCountryModal();
-  });
-}
-
 function openOrganizerSwitch() {
   if (window.ACTIVE_SIDE === 'workspace') {
     switchToTracker();
@@ -377,12 +330,7 @@ function switchToTracker() {
    LOGOUT
 ════════════════════════════════════════════════ */
 function bindLogout() {
-  document.getElementById('logout-btn')?.addEventListener('click', async () => {
-    if (!confirm('Sign out?')) return;
-    await authSignOut();
-    window.ALL_COMPANIES=[]; window.ALL_COUNTRIES=[];
-    showLogin();
-  });
+  // Logout is now handled by the user menu, but keep for mobile
 }
 
 /* ════════════════════════════════════════════════
@@ -414,7 +362,8 @@ function buildBottomNav() {
     { page:'ws-log',       label:'Activities', icon:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>' },
     { page:'ws-notes',     label:'Notes',      icon:'<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>' },
     { page:'ws-deleted',   label:'Deleted',    icon:'<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/>' },
-    { page:'ws-review',    label:'Review',    icon:'<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>' }
+    { page:'ws-review',    label:'Review',    icon:'<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>' },
+    { page:'ws-calendar',  label:'Calendar',  icon:'<rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>' }
   ];
 
   const items = side === 'workspace' ? WORKSPACE_ITEMS : TRACKER_ITEMS;
@@ -452,7 +401,8 @@ function buildTopNav() {
     ['ws-desk','My Desk'],
     ['ws-companies','Companies'],
     ['ws-log','Log'],
-    ['ws-review','Review']
+    ['ws-review','Review'],
+    ['ws-calendar','Calendar']
   ];
 
   const items = side === 'workspace' ? WORKSPACE : TRACKER;
@@ -465,6 +415,126 @@ function buildTopNav() {
   });
 }
 
+
+/* ════════════════════════════════════════════════
+   USER MENU (account dropdown)
+════════════════════════════════════════════════ */
+function initUserMenu() {
+  const wrap     = document.getElementById('user-menu-wrap');
+  const btn      = document.getElementById('user-menu-btn');
+  const dropdown = document.getElementById('user-menu-dropdown');
+  const nameEl   = document.getElementById('user-menu-name');
+  if (!wrap || !btn || !dropdown) return;
+
+  // Set the button text based on current page
+  function updateUserMenuButton() {
+    if (!nameEl) return;
+    
+    const isWS = window.ACTIVE_SIDE === 'workspace';
+    const page = window.CURRENT_PAGE;
+    
+    // Menu pages that should show the page name instead of user name
+    const menuPages = ['ws-notes', 'ws-deleted', 'management'];
+    
+    if (menuPages.includes(page)) {
+      // Show the page name
+      if (page === 'ws-notes') nameEl.textContent = 'Notes';
+      else if (page === 'ws-deleted') nameEl.textContent = 'Deleted';
+      else if (page === 'management') nameEl.textContent = 'Management';
+      else nameEl.textContent = 'Menu';
+      
+      // Highlight the button
+      btn.style.color = 'var(--accent)';
+      btn.style.fontWeight = '600';
+    } else {
+      // Show the user name
+      nameEl.textContent = window.CURRENT_USER_NAME || 'Account';
+      btn.style.color = '';
+      btn.style.fontWeight = '';
+    }
+  }
+
+  const isAdmin    = window.USER_ROLE === 'admin';
+  const isWS       = window.ACTIVE_SIDE === 'workspace';
+  const isMohammed = window.CURRENT_USER_NAME === 'Mohammed';
+
+  // Show/hide workspace-only items
+  const notesBtn   = document.getElementById('menu-notes-btn');
+  const deletedBtn = document.getElementById('menu-deleted-btn');
+  const mgmtBtn    = document.getElementById('menu-mgmt-btn');
+  const mgmtDiv    = document.getElementById('menu-mgmt-divider');
+
+  if (notesBtn)   { notesBtn.style.display   = isAdmin && isWS ? 'flex' : 'none'; }
+  if (deletedBtn) { deletedBtn.style.display  = isAdmin && isWS ? 'flex' : 'none'; }
+  if (mgmtBtn)    { mgmtBtn.style.display    = isMohammed ? 'flex' : 'none'; }
+  if (mgmtDiv)    { mgmtDiv.style.display    = isMohammed ? '' : 'none'; }
+
+  // Update button text initially
+  updateUserMenuButton();
+
+  // Hover on items
+  dropdown.querySelectorAll('.user-menu-item').forEach(item => {
+    item.addEventListener('mouseenter', () => item.style.background = 'var(--bg3)');
+    item.addEventListener('mouseleave', () => item.style.background = '');
+  });
+
+  // Toggle — bind only once
+  if (btn.dataset.bound) return;
+  btn.dataset.bound = '1';
+
+  btn.addEventListener('click', e => {
+    e.stopPropagation();
+    const open = dropdown.style.display === 'flex';
+    dropdown.style.display = open ? 'none' : 'flex';
+  });
+
+  document.addEventListener('click', e => {
+    if (!wrap.contains(e.target)) dropdown.style.display = 'none';
+  }, { capture: true });
+
+  // Handle menu item clicks
+  dropdown.querySelectorAll('.user-menu-item[data-action="nav"]').forEach(item => {
+    item.addEventListener('click', () => {
+      dropdown.style.display = 'none';
+      navigateTo(item.dataset.page);
+    });
+  });
+  
+  // Handle Add Company button
+  const addCompanyBtn = document.getElementById('add-btn');
+  if (addCompanyBtn) {
+    addCompanyBtn.addEventListener('click', () => {
+      dropdown.style.display = 'none';
+      openAddModal();
+    });
+  }
+  
+  // Handle Add Country button
+  const addCountryBtn = document.getElementById('add-country-page-btn');
+  if (addCountryBtn) {
+    addCountryBtn.addEventListener('click', () => {
+      dropdown.style.display = 'none';
+      openCountryModal();
+    });
+  }
+  
+  // Handle Sign out button
+  const signoutBtn = dropdown.querySelector('[data-action="signout"]');
+  if (signoutBtn) {
+    signoutBtn.addEventListener('click', async () => {
+      dropdown.style.display = 'none';
+      if (!confirm('Sign out?')) return;
+      await authSignOut();
+      window.ALL_COMPANIES = [];
+      window.ALL_COUNTRIES = [];
+      showLogin();
+    });
+  }
+  
+  // Store update function to call on page changes
+  window.updateUserMenuButton = updateUserMenuButton;
+}
+
 function navigateTo(page) {
   if (page===window.CURRENT_PAGE && page!=='companies') return;
   window.CURRENT_PAGE = page;
@@ -472,6 +542,8 @@ function navigateTo(page) {
   document.getElementById(`page-${page}`)?.classList.add('active');
   buildTopNav();
   buildBottomNav();
+  initUserMenu(); // Re-initialize to update button text
+  if (window.updateUserMenuButton) window.updateUserMenuButton();
   if (page==='countries') renderCountries(document.getElementById('ct-search').value);
   if (page==='dashboard') renderDashboard();
   if (page==='corridor')    initCorridorPage();
@@ -480,8 +552,9 @@ function navigateTo(page) {
   if (page==='ws-log')      renderWsLog();
   if (page==='ws-notes')    renderWsNotes();
   if (page==='ws-deleted')  renderWsDeleted();
-  if (page==='ws-deleted')  renderWsDeleted();
   if (page==='ws-review')   initWsReview();
+  if (page==='management')   renderManagement();
+  if (page==='ws-calendar')  renderCalendar();
 }
 
 /* ════════════════════════════════════════════════
@@ -735,8 +808,6 @@ async function handleSaveCountry() {
    COMPANY MODAL
 ════════════════════════════════════════════════ */
 function bindModal() {
-  // add-btn is inside the dropdown — bound separately in bindAddDropdown
-  // add-btn-mob is built dynamically — bound in buildBottomNav
   document.getElementById('mod-overlay')?.addEventListener('click', e=>{
     if (e.target===document.getElementById('mod-overlay')) closeModal();
   });
@@ -1008,7 +1079,7 @@ function bindWorkspace() {
     document.getElementById(id)?.addEventListener('change', renderWsNotes);
   });
   document.getElementById('ws-add-note-btn')?.addEventListener('click', () => openNoteForm(null));
-  ['ws-log-search','ws-log-filter-company','ws-log-filter-type','ws-log-filter-status','ws-log-filter-user','ws-log-filter-assign'].forEach(id => {
+  ['ws-log-search','ws-log-filter-company','ws-log-filter-type','ws-log-filter-status','ws-log-filter-user'].forEach(id => {
     document.getElementById(id)?.addEventListener('input', renderWsLog);
     document.getElementById(id)?.addEventListener('change', renderWsLog);
   });
@@ -1114,7 +1185,7 @@ function exportCorridorPDF(destination, destFlag, partners, commMap, getBestComm
       '<th style="padding:7px 10px;text-align:left;font-size:10px;width:22%">Transaction Types</th>'+
       '<th style="padding:7px 10px;text-align:left;font-size:10px;width:18%">Currencies</th>'+
       '<th style="padding:7px 10px;text-align:left;font-size:10px;width:38%">Commission</th>'+
-      '</tr></thead><tbody>'+rows+'</tbody></table></div>';
+      '</table></thead><tbody>'+rows+'</tbody></table></div>';
   }
 
   const summCards = [

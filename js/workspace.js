@@ -1,7 +1,7 @@
 /* ════════════════════════════════════════════════
    js/workspace.js
    FI Workspace — activity management side
-   My Desk · Companies · Log · Review
+   My Desk · Companies · Log · Review · Calendar
 ════════════════════════════════════════════════ */
 
 const WS_ACTIVITY_TYPES = ['Call','Email','Meeting','Document Sent','Follow-up','Other'];
@@ -166,6 +166,122 @@ function wsTimeAgo(ts) {
 function wsIsOverdue(a) {
   if (!a.follow_up_date || a.status !== 'Pending') return false;
   return a.follow_up_date < new Date().toISOString().slice(0,10);
+}
+
+/* ════════════════════════════════════════════════
+   EVENT NOTIFICATION CHECK
+════════════════════════════════════════════════ */
+async function checkEventNotifications() {
+  try {
+    const events = await dbGetUpcomingEvents();
+    if (!events || events.length === 0) return;
+    
+    const today = new Date().toISOString().slice(0, 10);
+    
+    // Filter events that need notification (within reminder window, not noticed)
+    const needNotification = [];
+    
+    for (const event of events) {
+      // Skip if already noticed
+      if (event.is_noticed) continue;
+      
+      // Calculate days until event
+      const eventDate = new Date(event.event_date);
+      const todayDate = new Date(today);
+      const daysUntil = Math.ceil((eventDate - todayDate) / (1000 * 60 * 60 * 24));
+      
+      // Check if within reminder window
+      if (daysUntil <= event.reminder_days && daysUntil >= 0) {
+        needNotification.push({ ...event, daysUntil });
+      }
+    }
+    
+    if (needNotification.length > 0) {
+      showEventNotificationPanel(needNotification);
+    }
+  } catch (e) {
+    console.warn('Event notification check failed:', e);
+  }
+}
+
+function showEventNotificationPanel(events) {
+  // Remove existing panel if any
+  const existing = document.getElementById('event-notification-panel');
+  if (existing) existing.remove();
+  
+  const panel = document.createElement('div');
+  panel.id = 'event-notification-panel';
+  panel.className = 'event-notification-panel';
+  
+  // Get event type label and color
+  function getEventTypeLabel(type) {
+    const types = {
+      holiday: '🎉 Holiday',
+      meeting: '📅 Meeting',
+      deadline: '⏰ Deadline',
+      travel: '✈️ Travel',
+      reminder: '📝 Reminder',
+      other: '📌 Other'
+    };
+    return types[type] || types.other;
+  }
+  
+  panel.innerHTML = `
+    <div class="event-notification-header">
+      <span>📅 Upcoming Events</span>
+      <button class="event-notification-close">&times;</button>
+    </div>
+    <div class="event-notification-list">
+      ${events.map(e => `
+        <div class="event-notification-item ${e.daysUntil <= 3 ? 'urgent' : ''}" data-id="${e.id}" style="border-left-color: ${e.color || '#f05252'}">
+          <div class="event-notification-info">
+            <div class="event-notification-name">${escapeHtml(e.name)}</div>
+            <div class="event-notification-date">${wsFormatDate(e.event_date)} · ${e.daysUntil} day${e.daysUntil !== 1 ? 's' : ''} left</div>
+            <div class="event-notification-type"><span style="color:${e.color || '#f05252'}">${getEventTypeLabel(e.event_type)}</span> · Added by ${escapeHtml(e.created_by || 'Unknown')}</div>
+            ${e.notes ? `<div class="event-notification-notes">${escapeHtml(e.notes)}</div>` : ''}
+          </div>
+          <button class="btn btn-sm event-notice-btn" data-id="${e.id}">✓ Mark as Noticed</button>
+        </div>
+      `).join('')}
+    </div>
+  `;
+  
+  document.body.appendChild(panel);
+  
+  // Close button
+  panel.querySelector('.event-notification-close').addEventListener('click', () => {
+    panel.remove();
+  });
+  
+  // Mark as noticed buttons
+  panel.querySelectorAll('.event-notice-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const eventId = parseInt(btn.dataset.id);
+      await dbToggleNoticed(eventId, true);
+      showToast('✓ Event marked as noticed');
+      // Remove this item from panel
+      const item = btn.closest('.event-notification-item');
+      item.remove();
+      if (panel.querySelectorAll('.event-notification-item').length === 0) {
+        panel.remove();
+      }
+      // Refresh calendar if open
+      if (window.CURRENT_PAGE === 'ws-calendar' && typeof renderCalendar === 'function') {
+        renderCalendar();
+      }
+    });
+  });
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return str.replace(/[&<>]/g, function(m) {
+    if (m === '&') return '&amp;';
+    if (m === '<') return '&lt;';
+    if (m === '>') return '&gt;';
+    return m;
+  });
 }
 
 /* ════════════════════════════════════════════════
@@ -335,6 +451,9 @@ async function renderMyDesk() {
     el.querySelectorAll('.ws-act-mini').forEach(card => {
       card.addEventListener('click', () => openActivityModal(+card.dataset.id));
     });
+    
+    // Check for event notifications after loading My Desk
+    checkEventNotifications();
 
   } catch (err) {
     el.innerHTML = `<p style="color:var(--danger)">Error: ${err.message}</p>`;
@@ -1099,6 +1218,7 @@ async function renderWsDeleted() {
             }).join('')}
           </div>
         </div>`;
+        
     }
     el.innerHTML = html;
     el.querySelectorAll('.ws-clear-del-month').forEach(btn => {

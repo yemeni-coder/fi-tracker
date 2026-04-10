@@ -5,19 +5,21 @@
 
 /* ── DB ── */
 async function wsGetNotes() {
-  const myLabel = window.CURRENT_USER_NAME
-    ? `${window.CURRENT_USER_NAME} (${window.CURRENT_USER_EMAIL})`
-    : window.CURRENT_USER_EMAIL;
+  const myName  = window.CURRENT_USER_NAME  || '';
+  const myEmail = window.CURRENT_USER_EMAIL || '';
+  const myLabel = myName ? `${myName} (${myEmail})` : myEmail;
   const all = await sbFetch('activities?activity_type=eq.Note&order=created_at.desc&limit=1000');
-  return (all || []).filter(a =>
-    a.user_email === myLabel || a.user_email === window.CURRENT_USER_EMAIL
-  );
+  return (all || []).filter(a => {
+    const ue = a.user_email || '';
+    // Match name-only, email-only, or "Name (email)" format
+    return ue === myName || ue === myEmail || ue === myLabel
+      || (myName && ue.startsWith(myName + ' ('));
+  });
 }
 
 async function wsAddNote(data) {
-  const userLabel = window.CURRENT_USER_NAME
-    ? `${window.CURRENT_USER_NAME} (${window.CURRENT_USER_EMAIL})`
-    : window.CURRENT_USER_EMAIL || 'unknown';
+  // Store as name-only for consistency
+  const userLabel = window.CURRENT_USER_NAME || window.CURRENT_USER_EMAIL || 'unknown';
   const [note] = await sbFetch('activities', {
     method: 'POST',
     body: JSON.stringify({
