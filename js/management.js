@@ -35,21 +35,19 @@ async function renderManagement() {
 
 async function mgmtGetStats() {
   try {
-    const [co, ac, al, ct, cm, ev] = await Promise.all([
+    const [co, ac, al, ct, cm] = await Promise.all([
       sbFetch('companies?select=id').catch(() => []),
       sbFetch('activities?select=id').catch(() => []),
       sbFetch('activity_log?select=id').catch(() => []),
       sbFetch('company_contacts?select=id').catch(() => []),
-      sbFetch('commissions?select=id').catch(() => []),
-      sbFetch('events?select=id').catch(() => [])
+      sbFetch('commissions?select=id').catch(() => [])
     ]);
     return {
       companies: (co || []).length,
       activities: (ac || []).length,
       actLog: (al || []).length,
       contacts: (ct || []).length,
-      commissions: (cm || []).length,
-      events: (ev || []).length
+      commissions: (cm || []).length
     };
   } catch(e) {
     return { companies: 0, activities: 0, actLog: 0, contacts: 0, commissions: 0 };
@@ -87,11 +85,6 @@ function renderMgmtContent(el, stats) {
           <div class="stat-val">${stats.commissions}</div>
           <div class="stat-sub">Fee structures</div>
         </div>
-        <div class="stat-card">
-          <div class="stat-label">Events</div>
-          <div class="stat-val">${stats.events || 0}</div>
-          <div class="stat-sub">Calendar events</div>
-        </div>
       </div>
     </div>
 
@@ -119,7 +112,7 @@ function renderMgmtContent(el, stats) {
         <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 14px; background:var(--bg); border:1px solid var(--border); border-radius:var(--r2)">
           <div>
             <div style="font-size:14px; font-weight:600; margin-bottom:4px">Reset All Data</div>
-            <div style="font-size:12px; color:var(--tx2)">Wipes activities, logs, contacts, commissions, observations, and events — keeps companies & countries</div>
+            <div style="font-size:12px; color:var(--tx2)">Wipes activities, logs, contacts, commissions, observations — keeps companies & countries</div>
           </div>
           <button class="btn btn-ghost" id="mgmt-reset-all" style="color:var(--danger)">Reset All</button>
         </div>
@@ -211,12 +204,11 @@ function bindMgmtEvents(el) {
       resetAll.disabled = true;
       try {
         await Promise.all([
-          sbFetch('activities?id=gt.0',       { method: 'DELETE', prefer: 'return=minimal' }),
-          sbFetch('activity_log?id=gt.0',     { method: 'DELETE', prefer: 'return=minimal' }),
+          sbFetch('activities?id=gt.0', { method: 'DELETE', prefer: 'return=minimal' }),
+          sbFetch('activity_log?id=gt.0', { method: 'DELETE', prefer: 'return=minimal' }),
           sbFetch('company_contacts?id=gt.0', { method: 'DELETE', prefer: 'return=minimal' }),
-          sbFetch('commissions?id=gt.0',      { method: 'DELETE', prefer: 'return=minimal' }),
-          sbFetch('observations?id=gt.0',     { method: 'DELETE', prefer: 'return=minimal' }),
-          sbFetch('events?id=gt.0',           { method: 'DELETE', prefer: 'return=minimal' }).catch(() => {})
+          sbFetch('commissions?id=gt.0', { method: 'DELETE', prefer: 'return=minimal' }),
+          sbFetch('observations?id=gt.0', { method: 'DELETE', prefer: 'return=minimal' })
         ]);
         showToast('✓ All data reset. Companies and countries kept.');
         renderManagement();
