@@ -1,7 +1,8 @@
-    /* ════════════════════════════════════════════════
+/* ════════════════════════════════════════════════
     js/calendar.js
     Event Calendar — Year/Month/Week views with Day View Panel
     UPDATED: All days in year view now have consistent uniform size
+    FIXED: Event saving button stuck on "Saving..." issue
     ════════════════════════════════════════════════ */
 
     let currentCalendarDate = new Date();
@@ -742,12 +743,13 @@
     }
 
     /* ════════════════════════════════════════════════
-    EVENT MODAL (Add/Edit)
+    EVENT MODAL (Add/Edit) - FIXED: Saving issue resolved
     ════════════════════════════════════════════════ */
     async function openEventModal(editId = null, presetDate = null) {
         const overlay = document.getElementById('event-modal-overlay');
         if (!overlay) return;
         
+        // Reset form
         document.getElementById('event-id').value = '';
         document.getElementById('event-name').value = '';
         document.getElementById('event-date').value = presetDate || new Date().toISOString().slice(0, 10);
@@ -758,6 +760,13 @@
         document.getElementById('event-notes').value = '';
         document.getElementById('event-recurring').checked = false;
         document.getElementById('event-delete-btn').style.display = 'none';
+        
+        // IMPORTANT: Reset save button to original state
+        const saveBtn = document.getElementById('event-save-btn');
+        if (saveBtn) {
+            saveBtn.textContent = 'Save Event';
+            saveBtn.disabled = false;
+        }
         
         const reminderSelect = document.getElementById('event-reminder');
         if (reminderSelect) {
@@ -783,10 +792,12 @@
                 document.getElementById('event-delete-btn').style.display = 'inline-flex';
                 document.getElementById('event-modal-title').textContent = 'Edit Event';
                 document.getElementById('event-modal-sub').textContent = 'Update event details';
+                if (saveBtn) saveBtn.textContent = 'Save Changes';
             }
         } else {
             document.getElementById('event-modal-title').textContent = 'Add Event';
             document.getElementById('event-modal-sub').textContent = 'Schedule an event';
+            if (saveBtn) saveBtn.textContent = 'Save Event';
         }
         
         overlay.classList.add('open');
@@ -794,7 +805,15 @@
     }
 
     function closeEventModal() {
-        document.getElementById('event-modal-overlay')?.classList.remove('open');
+        const overlay = document.getElementById('event-modal-overlay');
+        if (overlay) overlay.classList.remove('open');
+        
+        // IMPORTANT: Reset button when modal closes
+        const saveBtn = document.getElementById('event-save-btn');
+        if (saveBtn) {
+            saveBtn.textContent = 'Save Event';
+            saveBtn.disabled = false;
+        }
     }
 
     function bindEventTypeToggle() {
@@ -832,7 +851,9 @@
         }
         
         const btn = document.getElementById('event-save-btn');
-        btn.textContent = 'Saving...'; btn.disabled = true;
+        const originalText = btn.textContent;
+        btn.textContent = 'Saving...';
+        btn.disabled = true;
         
         try {
             const id = document.getElementById('event-id').value;
@@ -859,16 +880,26 @@
                 });
                 showToast('✓ Event added');
             }
+            
+            // Close modal FIRST
             closeEventModal();
-            renderCalendar();
+            
+            // Then refresh calendar
+            await renderCalendar();
             
             if (typeof checkEventNotifications === 'function') {
                 checkEventNotifications();
             }
+            
+            // Reset button (though modal is closed, this is safe)
+            btn.textContent = originalText;
+            btn.disabled = false;
+            
         } catch (err) {
-            showToast('⚠️ ' + err.message);
-        } finally {
-            btn.textContent = id ? 'Save Changes' : 'Save Event';
+            console.error('Save error:', err);
+            showToast('⚠️ Error: ' + (err.message || 'Failed to save event'));
+            // Reset button on error - keep modal open so user can try again
+            btn.textContent = originalText;
             btn.disabled = false;
         }
     }
