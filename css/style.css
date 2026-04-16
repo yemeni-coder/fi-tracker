@@ -3838,3 +3838,73 @@ input, select, textarea {
     font-size: 11px;
   }
 }
+
+/* ════════════════════════════════════════════════
+   FEATURE 2 — Transaction Limit Badge (in detail panel)
+════════════════════════════════════════════════ */
+
+.tx-limit-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 5px;
+  padding: 3px 8px;
+  background: var(--warn-soft);
+  border: 1px solid var(--warn);
+  border-radius: var(--r1);
+  font-size: 11px;
+  color: var(--warn);
+  font-weight: 500;
+}
+
+/* ════════════════════════════════════════════════
+   FEATURE 3 — Agreement rows (in detail panel)
+════════════════════════════════════════════════ */
+
+.agreement-row {
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r2);
+  transition: border-color var(--ease);
+}
+.agreement-row:hover { border-color: var(--border-h); }
+
+.agreement-row-original {
+  border-left: 3px solid var(--accent);
+  background: var(--ac-soft);
+}
+
+/* ════════════════════════════════════════════════
+   FEATURE 4 — Corridor Filter Bar
+════════════════════════════════════════════════ */
+
+#corridor-filter-bar {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--r3);
+  padding: 16px 20px;
+}
+
+@media (max-width: 768px) {
+  #corridor-filter-bar {
+    padding: 12px 14px;
+  }
+  #corridor-filter-bar > div,
+  #corridor-filter-bar > button {
+    width: 100%;
+  }
+}
+
+/* ════════════════════════════════════════════════
+   WORKSPACE NOTE CARDS (in case not already present)
+════════════════════════════════════════════════ */
+
+.ws-note-card {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--r3);
+  padding: 14px 16px;
+  transition: border-color var(--ease);
+}
+.ws-note-card:hover { border-color: var(--border-h); }

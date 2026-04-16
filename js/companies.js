@@ -9,17 +9,17 @@ const RELATIONSHIP_STATUSES = [
 ];
 
 const REL_STATUS_STYLE = {
-  'Sending & Receiving':   { cls: 'rs-active',       label: '⇄ Sending & Receiving'   },
-  'Sending Only':          { cls: 'rs-active',        label: '→ Sending Only'           },
-  'Receiving Only':        { cls: 'rs-active',        label: '← Receiving Only'         },
-  'Pipeline':              { cls: 'rs-pipeline',      label: '◎ Pipeline'               },
-  'Under Discussion':      { cls: 'rs-pipeline',      label: '◎ Under Discussion'       },
-  'Agreement in Progress': { cls: 'rs-progress',      label: '◐ Agreement in Progress'  },
-  'Agreement Signed':      { cls: 'rs-progress',      label: '◐ Agreement Signed'       },
-  'On-boarding':           { cls: 'rs-progress',      label: '◐ On-boarding'            },
-  'On Hold':               { cls: 'rs-hold',          label: '⏸ On Hold'                },
-  'Suspended':             { cls: 'rs-suspended',     label: '⊘ Suspended'              },
-  'Inactive':              { cls: 'rs-inactive',      label: '○ Inactive'               }
+  'Sending & Receiving':   { cls: 'rs-active',    label: '⇄ Sending & Receiving'   },
+  'Sending Only':          { cls: 'rs-active',    label: '→ Sending Only'           },
+  'Receiving Only':        { cls: 'rs-active',    label: '← Receiving Only'         },
+  'Pipeline':              { cls: 'rs-pipeline',  label: '◎ Pipeline'               },
+  'Under Discussion':      { cls: 'rs-pipeline',  label: '◎ Under Discussion'       },
+  'Agreement in Progress': { cls: 'rs-progress',  label: '◐ Agreement in Progress'  },
+  'Agreement Signed':      { cls: 'rs-progress',  label: '◐ Agreement Signed'       },
+  'On-boarding':           { cls: 'rs-progress',  label: '◐ On-boarding'            },
+  'On Hold':               { cls: 'rs-hold',      label: '⏸ On Hold'               },
+  'Suspended':             { cls: 'rs-suspended', label: '⊘ Suspended'              },
+  'Inactive':              { cls: 'rs-inactive',  label: '○ Inactive'               }
 };
 
 /* ── Consistent color per company based on name hash ── */
@@ -33,6 +33,14 @@ const AVATAR_COLORS = [
   { bg: 'rgba(247,130,79,0.15)', border: 'rgba(247,130,79,0.4)', text: '#f7824f' },
   { bg: 'rgba(79,247,168,0.15)', border: 'rgba(79,247,168,0.4)', text: '#4ff7a8' },
 ];
+
+const LIMIT_PERIOD_LABELS = {
+  per_transaction: 'per transaction',
+  per_day:         'per day',
+  per_week:        'per week',
+  per_month:       'per month',
+  per_year:        'per year'
+};
 
 function getCompanyColor(name) {
   let hash = 0;
@@ -81,7 +89,9 @@ function getFilteredCompanies() {
   return window.ALL_COMPANIES.filter(c => {
     const dirs      = (c.countries||[]).map(x=>x.direction);
     const ctryNames = (c.countries||[]).map(x=>x.name);
-    const matchName = c.name.toLowerCase().includes(query);
+    /* FEATURE 1 — also search local_market_name */
+    const matchName = c.name.toLowerCase().includes(query)
+                   || (c.local_market_name||'').toLowerCase().includes(query);
     const matchDir  = !dirVal || dirs.includes(dirVal) || (dirVal==='both'&&dirs.includes('send')&&dirs.includes('receive'));
     const matchCtry = !ctryVal || ctryNames.includes(ctryVal);
     const matchStat = !statVal || (c.relationship_status||'') === statVal;
@@ -133,6 +143,7 @@ function buildCompanyCard(c) {
         <div class="co-avatar" ${avatarStyle(c.name)}>${initials(c.name)}</div>
         <div style="flex:1;min-width:0">
           <div class="co-name">${c.name}</div>
+          ${c.local_market_name ? `<div style="font-size:11px;color:var(--accent);margin-top:1px;font-style:italic">aka ${c.local_market_name}</div>` : ''}
           <div class="co-meta">${c.company_type||'—'}${c.country_of_origin?' · '+c.country_of_origin:''}</div>
           <div style="margin-top:5px">${relStatusTag(c.relationship_status||'Pipeline')}</div>
         </div>
@@ -159,6 +170,7 @@ function buildCompanyRow(c) {
           <div class="co-avatar" ${avatarStyle(c.name,32,7)}>${initials(c.name)}</div>
           <div>
             <div style="font-family:'Syne',sans-serif;font-weight:600;font-size:14px">${c.name}</div>
+            ${c.local_market_name ? `<div style="font-size:11px;color:var(--accent);font-style:italic">aka ${c.local_market_name}</div>` : ''}
             <div style="font-size:11px;color:var(--tx2)">${c.company_type||'—'}${c.country_of_origin?' · '+c.country_of_origin:''}</div>
           </div>
         </div>
@@ -179,18 +191,35 @@ function fillCountryFilter() {
     names.map(n=>`<option value="${n}" ${n===prev?'selected':''}>${n}</option>`).join('');
 }
 
+/* FEATURE 2 — transaction limits shown in panel */
 function buildTransactionRows(transactions) {
   if (!transactions||transactions.length===0)
     return `<p style="color:var(--tx3);font-size:13px;margin-top:6px">No transactions added</p>`;
   return `<div class="tx-pairs-display">
-    ${transactions.map(tx=>`
-      <div class="tx-pair-display-row">
-        <div class="tx-pair-type">${makeTag(tx.txType,'t-type')}</div>
-        <div class="tx-pair-detail">
-          <div class="tx-pair-curs">${(tx.currencies||[]).map(cu=>makeTag(cu,'t-cur')).join('')}</div>
-          <div class="tx-pair-segs">${(tx.segments||[]).map(s=>makeTag(s,'t-seg')).join('')}</div>
-        </div>
-      </div>`).join('')}
+    ${transactions.map(tx=>{
+      const hasLimit = tx.limitMin != null || tx.limitMax != null;
+      const periodLabel = LIMIT_PERIOD_LABELS[tx.limitPeriod] || tx.limitPeriod || '';
+      let limitHtml = '';
+      if (hasLimit) {
+        const parts = [];
+        if (tx.limitMin != null) parts.push(`Min: <strong>${tx.limitMin.toLocaleString()}</strong>`);
+        if (tx.limitMax != null) parts.push(`Max: <strong>${tx.limitMax.toLocaleString()}</strong>`);
+        const cur = tx.limitCurrency ? ` ${tx.limitCurrency}` : '';
+        const per = periodLabel ? ` <span style="color:var(--tx3)">${periodLabel}</span>` : '';
+        limitHtml = `<div class="tx-limit-badge">
+          💳 ${parts.join(' · ')}${cur}${per}
+        </div>`;
+      }
+      return `
+        <div class="tx-pair-display-row">
+          <div class="tx-pair-type">${makeTag(tx.txType,'t-type')}</div>
+          <div class="tx-pair-detail">
+            <div class="tx-pair-curs">${(tx.currencies||[]).map(cu=>makeTag(cu,'t-cur')).join('')}</div>
+            <div class="tx-pair-segs">${(tx.segments||[]).map(s=>makeTag(s,'t-seg')).join('')}</div>
+            ${limitHtml}
+          </div>
+        </div>`;
+    }).join('')}
   </div>`;
 }
 
@@ -205,9 +234,9 @@ function openCompanyDetail(id) {
   const avatar = document.getElementById('p-avatar');
   avatar.textContent    = initials(c.name);
   avatar.style.fontSize = '';
-  avatar.style.background  = col.bg;
-  avatar.style.border      = `1px solid ${col.border}`;
-  avatar.style.color       = col.text;
+  avatar.style.background   = col.bg;
+  avatar.style.border       = `1px solid ${col.border}`;
+  avatar.style.color        = col.text;
   avatar.style.borderRadius = '12px';
 
   document.getElementById('p-name').textContent = c.name;
@@ -217,6 +246,7 @@ function openCompanyDetail(id) {
   const editBtn = document.getElementById('p-edit');
   editBtn.style.display = window.USER_ROLE === 'admin' ? '' : 'none';
   editBtn.dataset.id    = id;
+  editBtn.dataset.paneltype = 'company';
 
   const allCur = getAllCurrencies(c);
   const allTx  = getAllTxTypes(c);
@@ -234,10 +264,8 @@ function openCompanyDetail(id) {
         </div>`).join('')
     : '<p style="color:var(--tx3);font-size:13px">No countries linked yet</p>';
 
-  const hasContact = c.contact_name||c.contact_email||c.contact_phone;
-  const hasDates   = c.agreement_date||c.go_live_date||c.last_review_date;
+  const hasDates = c.agreement_date||c.go_live_date||c.last_review_date;
 
-  /* PDF button — admin only */
   const pdfBtn = window.USER_ROLE === 'admin'
     ? `<button class="btn btn-ghost" id="pdf-btn" data-id="${c.id}"
         style="width:100%;justify-content:center;margin-bottom:4px">
@@ -254,6 +282,15 @@ function openCompanyDetail(id) {
         ${c.website?`<a href="${c.website}" target="_blank" style="font-size:12px;color:var(--accent);margin-left:10px">${c.website} ↗</a>`:''}
       </div>
     </div>
+
+    ${c.local_market_name ? `
+    <div>
+      <div class="sec-label">Market Name</div>
+      <div class="sec" style="padding:12px 18px">
+        <div style="font-size:14px;color:var(--tx)">${c.local_market_name}</div>
+        <div style="font-size:11px;color:var(--tx3);margin-top:3px">Local / market-facing name</div>
+      </div>
+    </div>` : ''}
 
     <div>
       <div class="sec-label">Overview</div>
@@ -287,6 +324,17 @@ function openCompanyDetail(id) {
       <div class="notes-box">${c.notes}</div>
     </div>`:''}
 
+    <!-- FEATURE 3 — Agreements section -->
+    <div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <div class="sec-label" style="margin-bottom:0">Agreements</div>
+        ${window.USER_ROLE === 'admin' ? `<button class="btn btn-ghost" id="add-agreement-btn" style="font-size:12px;padding:5px 10px">+ Add</button>` : ''}
+      </div>
+      <div class="sec" id="agreements-section-${c.id}">
+        <div class="loading-state" style="padding:12px"><div class="spinner"></div></div>
+      </div>
+    </div>
+
     <div>
       <div class="sec-label">Contacts</div>
       <div class="sec" id="contacts-section-${c.id}">
@@ -301,16 +349,154 @@ function openCompanyDetail(id) {
       </div>
     </div>`;
 
-  // Bind PDF button
   document.getElementById('pdf-btn')?.addEventListener('click', () => exportCompanyPDF(c));
 
-  // Load contacts
+  /* FEATURE 3 — wire up agreements section */
+  renderAgreementsSection(c.id, c);
+  document.getElementById('add-agreement-btn')?.addEventListener('click', () =>
+    openAgreementForm(c.id, null, `agreements-section-${c.id}`)
+  );
+
   renderContactsSection(c.id, `contacts-section-${c.id}`);
-
-  // Load commissions
   renderCommissionsSection(c.id, c);
-
   document.getElementById('overlay').classList.add('open');
+}
+
+/* ════════════════════════════════════════════════
+   FEATURE 3 — Agreements section renderer
+════════════════════════════════════════════════ */
+async function renderAgreementsSection(companyId, company) {
+  const el = document.getElementById(`agreements-section-${companyId}`);
+  if (!el) return;
+  el.innerHTML = `<div class="loading-state" style="padding:12px"><div class="spinner"></div></div>`;
+
+  try {
+    const agreements = await dbGetAgreements(companyId);
+    const isAdmin    = window.USER_ROLE === 'admin';
+
+    /* Always show original agreement as first item if it exists */
+    const origDate = company?.agreement_date || null;
+    const origRow  = origDate ? `
+      <div class="agreement-row agreement-row-original">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="font-size:11px;padding:2px 7px;border-radius:20px;background:var(--ac-soft);color:var(--accent);font-weight:600">Original</span>
+          <span style="font-size:13px;font-weight:600;color:var(--tx)">Master Agreement</span>
+        </div>
+        <div style="font-size:12px;color:var(--tx2);margin-top:3px">📅 ${formatDate(origDate)}</div>
+      </div>` : '';
+
+    if (!agreements || agreements.length === 0) {
+      el.innerHTML = `
+        ${origRow}
+        ${!origDate ? `<p style="color:var(--tx3);font-size:13px">No agreements added yet</p>` : ''}`;
+      return;
+    }
+
+    el.innerHTML = `
+      ${origRow}
+      <div style="display:flex;flex-direction:column;gap:8px;${origDate?'margin-top:10px':''}">
+        ${agreements.map(ag => buildAgreementCard(ag, isAdmin)).join('')}
+      </div>`;
+
+    el.querySelectorAll('.ag-edit-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const ag = agreements.find(a => a.id === +btn.dataset.id);
+        if (ag) openAgreementForm(companyId, ag, `agreements-section-${companyId}`, company);
+      });
+    });
+    el.querySelectorAll('.ag-delete-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Delete this agreement?')) return;
+        await dbDeleteAgreement(+btn.dataset.id);
+        showToast('Agreement removed');
+        renderAgreementsSection(companyId, company);
+      });
+    });
+  } catch (err) {
+    el.innerHTML = `<p style="color:var(--danger);font-size:13px">Error: ${err.message}</p>`;
+  }
+}
+
+function buildAgreementCard(ag, isAdmin) {
+  return `
+    <div class="agreement-row">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:600;color:var(--tx);margin-bottom:3px">${ag.name}</div>
+          ${ag.agreement_date ? `<div style="font-size:12px;color:var(--tx2)">📅 ${formatDate(ag.agreement_date)}</div>` : ''}
+          ${ag.notes ? `<div style="font-size:11px;color:var(--tx3);margin-top:4px">${ag.notes}</div>` : ''}
+        </div>
+        ${isAdmin ? `
+        <div style="display:flex;gap:4px;flex-shrink:0">
+          <button class="panel-btn ag-edit-btn" data-id="${ag.id}" style="width:26px;height:26px;font-size:11px">✏️</button>
+          <button class="panel-btn ag-delete-btn" data-id="${ag.id}" style="width:26px;height:26px;font-size:11px;color:var(--danger)">✕</button>
+        </div>` : ''}
+      </div>
+    </div>`;
+}
+
+function openAgreementForm(companyId, existing, containerId, company) {
+  document.getElementById('agreement-form-wrap')?.remove();
+
+  const wrap = document.createElement('div');
+  wrap.id = 'agreement-form-wrap';
+  wrap.style.marginTop = '12px';
+  wrap.innerHTML = `
+    <div class="contact-form">
+      <div style="font-family:'Syne',sans-serif;font-weight:600;font-size:14px;margin-bottom:14px">
+        ${existing ? 'Edit Agreement' : 'Add Agreement'}
+      </div>
+      <div class="form-group" style="margin-bottom:12px">
+        <label class="form-label">Agreement Name *</label>
+        <input class="form-input" type="text" id="agf-name" value="${existing?.name||''}"
+          placeholder="e.g. Amendment #1, Addendum — SEPA, MOU 2025" />
+      </div>
+      <div class="form-group" style="margin-bottom:12px">
+        <label class="form-label">Date</label>
+        <input class="form-input" type="date" id="agf-date" value="${existing?.agreement_date||''}" />
+      </div>
+      <div class="form-group" style="margin-bottom:14px">
+        <label class="form-label">Notes</label>
+        <input class="form-input" type="text" id="agf-notes" value="${existing?.notes||''}"
+          placeholder="Any notes about this agreement…" />
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost" id="agf-cancel" style="flex:1;justify-content:center">Cancel</button>
+        <button class="btn btn-primary" id="agf-save" style="flex:1;justify-content:center">
+          ${existing ? 'Save Changes' : 'Add Agreement'}
+        </button>
+      </div>
+    </div>`;
+
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  container.parentNode.insertBefore(wrap, container.nextSibling);
+  setTimeout(() => wrap.scrollIntoView({ behavior:'smooth', block:'nearest' }), 50);
+  setTimeout(() => document.getElementById('agf-name')?.focus(), 80);
+
+  document.getElementById('agf-cancel').addEventListener('click', () => wrap.remove());
+  document.getElementById('agf-save').addEventListener('click', async () => {
+    const name = document.getElementById('agf-name').value.trim();
+    if (!name) { showToast('⚠️ Agreement name is required'); return; }
+    const data = {
+      name,
+      agreementDate: document.getElementById('agf-date').value  || null,
+      notes:         document.getElementById('agf-notes').value.trim() || null
+    };
+    const btn = document.getElementById('agf-save');
+    btn.textContent = 'Saving…'; btn.disabled = true;
+    try {
+      if (existing) { await dbUpdateAgreement(existing.id, data); showToast('✓ Agreement updated'); }
+      else          { await dbAddAgreement(companyId, data);       showToast('✓ Agreement added'); }
+      wrap.remove();
+      const c = window.ALL_COMPANIES.find(x => x.id === companyId);
+      renderAgreementsSection(companyId, company || c);
+    } catch (err) {
+      showToast('⚠️ ' + err.message);
+      btn.textContent = existing ? 'Save Changes' : 'Add Agreement';
+      btn.disabled = false;
+    }
+  });
 }
 
 /* ════════════════════════════════════════════════
@@ -319,11 +505,11 @@ function openCompanyDetail(id) {
 async function exportCompanyPDF(c) {
   const col = getCompanyColor(c.name);
 
-  // Fetch commissions
   let commissions = [];
+  let agreements  = [];
   try { commissions = await dbGetCommissions(c.id); } catch(e) {}
+  try { agreements  = await dbGetAgreements(c.id);  } catch(e) {}
 
-  // Get commission for a specific country
   function getCommForCountry(coName) {
     const ct = (window.ALL_COUNTRIES||[]).find(x => x.name === coName);
     const specific = ct ? commissions.find(cm => cm.country_id === ct.id) : null;
@@ -348,13 +534,25 @@ async function exportCompanyPDF(c) {
       '</div>';
   }
 
-  // Build country rows
+  function limitBadge(tx) {
+    if (tx.limitMin == null && tx.limitMax == null) return '';
+    const parts = [];
+    if (tx.limitMin != null) parts.push('Min: ' + tx.limitMin.toLocaleString());
+    if (tx.limitMax != null) parts.push('Max: ' + tx.limitMax.toLocaleString());
+    const cur = tx.limitCurrency || '';
+    const per = LIMIT_PERIOD_LABELS[tx.limitPeriod] || tx.limitPeriod || '';
+    return '<div style="font-size:10px;color:#e65100;margin-top:3px;padding:2px 8px;background:#fff3e0;border-radius:4px;display:inline-block">' +
+      '⚠️ Limit: ' + parts.join(' · ') + (cur?' '+cur:'') + (per?' '+per:'') +
+      '</div>';
+  }
+
   const ctRows = (c.countries||[]).map(co => {
     const txRows = (co.transactions||[]).map(tx =>
       '<tr>' +
       '<td style="padding:6px 10px;border-bottom:1px solid #eee;font-size:12px">' + (tx.txType||'—') + '</td>' +
       '<td style="padding:6px 10px;border-bottom:1px solid #eee;font-size:12px">' + ((tx.currencies||[]).join(', ')||'—') + '</td>' +
       '<td style="padding:6px 10px;border-bottom:1px solid #eee;font-size:12px">' + ((tx.segments||[]).join(', ')||'—') + '</td>' +
+      '<td style="padding:6px 10px;border-bottom:1px solid #eee;font-size:11px">' + limitBadge(tx) + '</td>' +
       '</tr>'
     ).join('');
 
@@ -368,6 +566,7 @@ async function exportCompanyPDF(c) {
         '<th style="padding:6px 10px;text-align:left;font-size:11px;color:#666;font-weight:600">TYPE</th>' +
         '<th style="padding:6px 10px;text-align:left;font-size:11px;color:#666;font-weight:600">CURRENCIES</th>' +
         '<th style="padding:6px 10px;text-align:left;font-size:11px;color:#666;font-weight:600">SEGMENTS</th>' +
+        '<th style="padding:6px 10px;text-align:left;font-size:11px;color:#666;font-weight:600">LIMITS</th>' +
         '</tr></thead><tbody>' + txRows + '</tbody></table>'
       : '<p style="color:#999;font-size:12px">No transactions</p>';
 
@@ -380,7 +579,6 @@ async function exportCompanyPDF(c) {
       txTable + '</div>';
   }).join('');
 
-  // Build full commission section
   function buildCommSection() {
     if (!commissions.length) return '<p style="color:#999;font-size:12px">No commissions defined</p>';
     return commissions.map(comm => {
@@ -413,6 +611,28 @@ async function exportCompanyPDF(c) {
     }).join('');
   }
 
+  function buildAgreementsSection() {
+    const origDate = c.agreement_date;
+    let html = '';
+    if (origDate) {
+      html += '<div style="padding:8px 12px;border:1px solid #ddd;border-radius:6px;margin-bottom:8px;background:#f8f9ff">' +
+        '<span style="font-size:10px;background:#e3f2fd;color:#1565c0;padding:2px 7px;border-radius:20px;font-weight:600">Original</span>' +
+        ' <strong>Master Agreement</strong>' +
+        ' <span style="color:#666;font-size:12px">— ' + formatDate(origDate) + '</span>' +
+        '</div>';
+    }
+    if (agreements.length > 0) {
+      html += agreements.map(ag =>
+        '<div style="padding:8px 12px;border:1px solid #ddd;border-radius:6px;margin-bottom:8px">' +
+        '<strong style="font-size:13px">' + ag.name + '</strong>' +
+        (ag.agreement_date ? ' <span style="color:#666;font-size:12px">— ' + formatDate(ag.agreement_date) + '</span>' : '') +
+        (ag.notes ? '<div style="font-size:11px;color:#888;margin-top:4px">' + ag.notes + '</div>' : '') +
+        '</div>'
+      ).join('');
+    }
+    return html || '<p style="color:#999;font-size:12px">No agreements recorded</p>';
+  }
+
   const notesHTML = c.notes
     ? '<div style="background:#f9f9f9;border-left:3px solid '+col.text+';padding:12px 16px;border-radius:0 6px 6px 0;margin-bottom:28px;font-size:13px;color:#444">' +
       '<strong style="display:block;margin-bottom:4px;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#999">Notes</strong>' +
@@ -438,6 +658,7 @@ async function exportCompanyPDF(c) {
     </div>
     <div style="flex:1">
       <h1 style="font-size:26px;font-weight:800;letter-spacing:-0.5px">${c.name}</h1>
+      ${c.local_market_name ? `<div style="font-size:13px;color:${col.text};font-style:italic;margin-top:2px">aka ${c.local_market_name}</div>` : ''}
       <div style="font-size:13px;color:#666;margin-top:4px">${c.company_type||''}${c.country_of_origin?' \xb7 '+c.country_of_origin:''}${c.website?' \xb7 <a href="'+c.website+'" style="color:'+col.text+'">'+c.website+'</a>':''}</div>
     </div>
     <div style="text-align:right;flex-shrink:0">
@@ -467,6 +688,13 @@ async function exportCompanyPDF(c) {
   </div>
 
   ${notesHTML}
+
+  <div style="margin-bottom:28px">
+    <div style="font-size:11px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:1px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #eee">
+      Agreements
+    </div>
+    ${buildAgreementsSection()}
+  </div>
 
   <div style="margin-bottom:28px">
     <div style="font-size:11px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:1px;margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid #eee">
