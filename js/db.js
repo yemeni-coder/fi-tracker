@@ -105,19 +105,24 @@ async function dbCheckDuplicateName(name, excludeId = null) {
 /* FEATURE 1 — local_market_name included in buildCompanyBody */
 function buildCompanyBody(data) {
   return {
-    name:                data.name,
-    local_market_name:   data.localMarketName    || null,
-    company_type:        data.type               || null,
-    country_of_origin:   data.countryOfOrigin    || null,
-    relationship_status: data.relationshipStatus || 'Pipeline',
-    agreement_date:      data.agreementDate      || null,
-    go_live_date:        data.goLiveDate          || null,
-    last_review_date:    data.lastReviewDate      || null,
-    contact_name:        data.contactName        || null,
-    contact_email:       data.contactEmail       || null,
-    contact_phone:       data.contactPhone       || null,
-    website:             data.website            || null,
-    notes:               data.notes              || null
+    name:                 data.name,
+    local_market_name:    data.localMarketName      || null,
+    company_type:         data.type                 || null,
+    country_of_origin:    data.countryOfOrigin      || null,
+    /* New two-field status system */
+    partnership_status:   data.partnershipStatus    || 'Pipeline',
+    partnership_direction:data.partnershipDirection || null,
+    partnership_phase:    data.partnershipPhase     || null,
+    /* Keep old field in sync for backward compat */
+    relationship_status:  data.partnershipStatus    || data.relationshipStatus || 'Pipeline',
+    agreement_date:       data.agreementDate        || null,
+    go_live_date:         data.goLiveDate            || null,
+    last_review_date:     data.lastReviewDate       || null,
+    contact_name:         data.contactName          || null,
+    contact_email:        data.contactEmail         || null,
+    contact_phone:        data.contactPhone         || null,
+    website:              data.website              || null,
+    notes:                data.notes                || null
   };
 }
 

@@ -196,7 +196,7 @@ function renderCoverage() {
       if (!countryPartners[co.name].find(p => p.id === c.id)) {
         countryPartners[co.name].push({
           id: c.id, name: c.name,
-          status: c.relationship_status,
+          status: c.partnership_status||c.relationship_status||'Pipeline',
           type:   c.company_type
         });
       }
@@ -276,7 +276,7 @@ function renderCoverage() {
     const count     = partners.length;
     const intensity = count === 1 ? 0.5 : count === 2 ? 0.65 : count <= 4 ? 0.8 : 0.95;
     const hasActive = partners.some(p =>
-      ['Sending & Receiving','Sending Only','Receiving Only'].includes(p.status)
+      p.status==='Active' || ['Sending & Receiving','Sending Only','Receiving Only'].includes(p.status)
     );
     const color = hasActive
       ? `rgba(79,110,247,${intensity})`
@@ -363,7 +363,7 @@ function showMapTooltip(e, countryName, partners) {
   }
 
   const activeCount = partners.filter(p =>
-    ['Sending & Receiving','Sending Only','Receiving Only'].includes(p.status)
+    p.status==='Active' || ['Sending & Receiving','Sending Only','Receiving Only'].includes(p.status)
   ).length;
 
   tip.innerHTML = `

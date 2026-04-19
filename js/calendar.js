@@ -467,7 +467,7 @@
         }
         
         // Build HTML with CSS Grid - 4 months per row
-        let monthsHtml = '<div class="year-months-grid" style="display:grid; grid-template-columns:repeat(4, 1fr); gap:12px;">';
+        let monthsHtml = '<div class="year-months-grid" style="display:grid; grid-template-columns:repeat(6, 1fr); gap:8px;">';
         
         for (let i = 0; i < monthsData.length; i++) {
             monthsHtml += buildCompactMonthGrid(monthsData[i], weekDays, year);
@@ -541,21 +541,21 @@
         return `
             <div class="year-month-grid" style="background:var(--bg3); border:1px solid var(--border); border-radius:var(--r2); overflow:hidden;">
                 <div class="year-month-header" data-month="${monthData.month}" 
-                    style="background:var(--bg2); padding:6px 8px; text-align:center; font-family:'Syne',sans-serif; font-weight:700; font-size:12px; border-bottom:1px solid var(--border); cursor:pointer; transition:all var(--ease);">
+                    style="background:var(--bg2); padding:4px 6px; text-align:center; font-family:'Syne',sans-serif; font-weight:700; font-size:11px; border-bottom:1px solid var(--border); cursor:pointer; transition:all var(--ease);">
                     ${monthData.name} ${year}
                     ${hasEvents ? `<span style="font-size:9px; margin-left:4px; background:var(--ac-soft); padding:1px 5px; border-radius:12px; color:var(--accent);">${monthData.totalEvents}</span>` : ''}
                 </div>
-                <div style="padding:6px;">
+                <div style="padding:4px;">
                     <!-- Weekday headers - compact -->
-                    <div style="display:grid; grid-template-columns:repeat(7, 1fr); gap:2px; margin-bottom:4px;">
+                    <div style="display:grid; grid-template-columns:repeat(7, 1fr); gap:1px; margin-bottom:2px;">
                         ${weekDays.map(day => `
-                            <div style="text-align:center; font-size:8px; font-weight:600; color:var(--tx3); padding:4px 0;">${day}</div>
+                            <div style="text-align:center; font-size:7px; font-weight:600; color:var(--tx3); padding:2px 0;">${day}</div>
                         `).join('')}
                     </div>
                     <!-- Days grid - ALL cells have UNIFORM size -->
-                    <div style="display:flex; flex-direction:column; gap:2px;">
+                    <div style="display:flex; flex-direction:column; gap:1px;">
                         ${monthData.days.map(week => `
-                            <div style="display:grid; grid-template-columns:repeat(7, 1fr); gap:2px;">
+                            <div style="display:grid; grid-template-columns:repeat(7, 1fr); gap:1px;">
                                 ${week.map(day => {
                                     if (!day) {
                                         // Empty cell - same size as day cells
@@ -573,7 +573,7 @@
                                     return `
                                         <div class="year-cal-day" data-date="${day.date}" data-day="${day.day}"
                                             style="${dayStyle}">
-                                            <div style="font-size:10px; font-weight:${isToday ? '700' : '500'}; color:${isToday ? 'white' : 'var(--tx)'};">${day.day}</div>
+                                            <div style="font-size:9px; font-weight:${isToday ? '700' : '500'}; color:${isToday ? 'white' : 'var(--tx)'};">${day.day}</div>
                                             ${hasEvent && !isToday ? `<div style="position:absolute; bottom:3px; left:50%; transform:translateX(-50%); width:4px; height:4px; border-radius:50%; background:${day.events[0]?.color || 'var(--accent)'};"></div>` : ''}
                                             ${day.hasUnnoticed && !isToday ? `<div style="position:absolute; top:1px; right:1px; width:8px; height:8px; background:var(--danger); border-radius:50%; font-size:6px; color:white; display:flex; align-items:center; justify-content:center;">!</div>` : ''}
                                         </div>
@@ -974,7 +974,7 @@
             }
             @media (max-width: 1400px) {
                 .year-months-grid {
-                    grid-template-columns: repeat(3, 1fr) !important;
+                    grid-template-columns: repeat(4, 1fr) !important;
                 }
             }
             @media (max-width: 1000px) {

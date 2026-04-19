@@ -2707,6 +2707,47 @@ input, select, textarea {
   gap: 2px;
 }
 
+/* ── User Menu Button (blue pill in top nav) ── */
+#user-menu-btn {
+  background: var(--accent);
+  color: #ffffff !important;
+  border: none;
+  gap: 6px;
+}
+#user-menu-btn:hover { opacity: 0.88; }
+#user-menu-btn #user-menu-name { color: #ffffff !important; }
+
+/* ── User Menu Dropdown Items ── */
+.user-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: var(--r1);
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 13px;
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 500;
+  color: var(--tx) !important;
+  text-align: left;
+  width: 100%;
+  transition: background var(--ease), color var(--ease);
+}
+.user-menu-item:hover {
+  background: var(--ac-soft);
+  color: var(--accent) !important;
+}
+.user-menu-item[data-action="signout"] {
+  color: var(--danger) !important;
+}
+.user-menu-item[data-action="signout"]:hover {
+  background: var(--danger-soft);
+  color: var(--danger) !important;
+}
+
+
 @media (max-width: 768px) {
   #mgmt-content [style*="grid-template-columns:repeat(5"] {
     grid-template-columns: repeat(3, 1fr) !important;
@@ -2936,15 +2977,15 @@ input, select, textarea {
 
 .year-view-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 10px;
 }
 
 .year-month-card {
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--r2);
-  padding: 12px;
+  padding: 8px;
   cursor: pointer;
   transition: all var(--ease);
 }
@@ -3733,7 +3774,7 @@ input, select, textarea {
 /* Calendar Responsive */
 @media (max-width: 1024px) {
   .year-view-grid {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
   }
 }
 
@@ -3746,7 +3787,7 @@ input, select, textarea {
     font-size: 12px;
   }
   .year-view-grid {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(3, 1fr);
   }
   .week-view-grid {
     overflow-x: auto;

@@ -131,7 +131,7 @@ function buildHTML(data) {
   const date = new Date().toLocaleDateString('en-GB', { day:'2-digit', month:'long', year:'numeric' });
   const totalPartners = [...new Set(data.flatMap(d => d.partners.map(p => p.name)))].length;
   const activeMarkets = data.filter(d => d.partners.some(p =>
-    ['Sending & Receiving','Sending Only','Receiving Only'].includes(p.status)
+    p.status==='Active' || ['Sending & Receiving','Sending Only','Receiving Only'].includes(p.status)
   )).length;
 
   function statusBadge(status) {
@@ -151,7 +151,7 @@ function buildHTML(data) {
 
   const blocks = data.map(country => {
     const activeCount = country.partners.filter(p =>
-      ['Sending & Receiving','Sending Only','Receiving Only'].includes(p.status)
+      p.status==='Active' || ['Sending & Receiving','Sending Only','Receiving Only'].includes(p.status)
     ).length;
 
     const allCur = [...new Set(country.partners.flatMap(p =>

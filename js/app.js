@@ -154,6 +154,8 @@ async function handleLogin() {
 
     if (actualRole === 'admin') {
       window.CURRENT_USER_NAME = profile.display_name || '';
+      /* Log admin login to activity_log so it appears in Management → Activity Log */
+      dbLogActivity('login', null, null, `Admin signed in`).catch(() => {});
     } else {
       const viewerName = document.getElementById('login-name')?.value.trim() || '';
       window.CURRENT_USER_NAME = viewerName || 'Viewer';
@@ -183,6 +185,11 @@ function showLogin() {
   document.getElementById('login-email').value = '';
   document.getElementById('login-password').value = '';
   document.getElementById('login-error').textContent = '';
+  /* Always reset the login button — fixes "Signing in…" stuck state after sign out */
+  const btn = document.getElementById('login-btn');
+  if (btn) btn.disabled = false;
+  const btnText = document.getElementById('login-btn-text');
+  if (btnText) btnText.textContent = 'Sign In as Admin';
   setTimeout(() => document.getElementById('login-email')?.focus(), 100);
 }
 
@@ -591,9 +598,6 @@ function initCorridorPage() {
   ).values()].sort((a,b)=>a.name.localeCompare(b.name));
 
   // Populate datalist
-  /* FEATURE 4 — inject filter bar */
-  injectCorridorFilters();
-
   const datalist = document.getElementById('corridor-countries-list');
   if (datalist) {
     datalist.innerHTML = linkedCountries.map(co =>
@@ -653,57 +657,6 @@ function initCorridorPage() {
   }
 }
 
-
-/* ════════════════════════════════════════════════
-   FEATURE 4 — Corridor Search Filters
-════════════════════════════════════════════════ */
-function injectCorridorFilters() {
-  if (document.getElementById('corridor-filter-bar')) return;
-  const corridorBox = document.querySelector('.corridor-box');
-  if (!corridorBox) return;
-
-  const bar = document.createElement('div');
-  bar.id = 'corridor-filter-bar';
-  bar.style.cssText = 'display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;align-items:flex-end';
-  bar.innerHTML = `
-    <div style="flex:1;min-width:160px">
-      <div style="font-size:11px;font-weight:600;color:var(--tx3);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:5px">Transaction Type</div>
-      <select class="filter-sel" id="corridor-filter-type" style="width:100%;height:40px">
-        <option value="">All types</option>
-        ${TX_TYPES.map(t=>`<option value="${t}">${t}</option>`).join('')}
-      </select>
-    </div>
-    <div style="flex:1;min-width:140px">
-      <div style="font-size:11px;font-weight:600;color:var(--tx3);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:5px">Currency</div>
-      <select class="filter-sel" id="corridor-filter-currency" style="width:100%;height:40px">
-        <option value="">All currencies</option>
-        ${CURRENCIES.map(c=>`<option value="${c}">${c}</option>`).join('')}
-      </select>
-    </div>
-    <button class="btn btn-primary" id="corridor-filter-btn" style="height:40px;align-self:flex-end;flex-shrink:0">
-      🔍 Apply Filters
-    </button>
-    <button class="btn btn-ghost" id="corridor-filter-clear" style="height:40px;align-self:flex-end;flex-shrink:0;display:none">
-      ✕ Clear
-    </button>`;
-
-  corridorBox.insertAdjacentElement('afterend', bar);
-
-  document.getElementById('corridor-filter-btn').addEventListener('click', () => {
-    const hasTx  = !!document.getElementById('corridor-filter-type').value;
-    const hasCur = !!document.getElementById('corridor-filter-currency').value;
-    document.getElementById('corridor-filter-clear').style.display = (hasTx||hasCur) ? '' : 'none';
-    runCorridorSearch();
-  });
-
-  document.getElementById('corridor-filter-clear').addEventListener('click', () => {
-    document.getElementById('corridor-filter-type').value     = '';
-    document.getElementById('corridor-filter-currency').value = '';
-    document.getElementById('corridor-filter-clear').style.display = 'none';
-    runCorridorSearch();
-  });
-}
-
 async function runCorridorSearch(destination) {
   if (!destination) {
     const val = document.getElementById('corridor-to-input')?.value?.trim() || '';
@@ -712,19 +665,7 @@ async function runCorridorSearch(destination) {
   }
   const res = document.getElementById('corridor-results');
   if (!destination) { res.innerHTML=`<div class="empty-state"><div class="empty-icon">🌍</div><p>Select a destination country to see available partners</p></div>`; return; }
-  /* FEATURE 4 — read active filters */
-  const filterTxType  = document.getElementById('corridor-filter-type')?.value  || '';
-  const filterCur     = document.getElementById('corridor-filter-currency')?.value || '';
-
-  let partners = window.ALL_COMPANIES.filter(c=>(c.countries||[]).some(co=>co.name===destination));
-  if (filterTxType) {
-    partners = partners.filter(c=>(c.countries||[]).some(co=>co.name===destination &&
-      (co.transactions||[]).some(t=>t.txType===filterTxType)));
-  }
-  if (filterCur) {
-    partners = partners.filter(c=>(c.countries||[]).some(co=>co.name===destination &&
-      (co.transactions||[]).some(t=>(t.currencies||[]).includes(filterCur))));
-  }
+  const partners  = window.ALL_COMPANIES.filter(c=>(c.countries||[]).some(co=>co.name===destination));
   if (!partners.length) { res.innerHTML=`<div class="empty-state"><div class="empty-icon">😔</div><p>No partners found for ${destination}</p></div>`; return; }
   const commMap = {};
   await Promise.all(partners.map(async p => {
@@ -803,7 +744,7 @@ function buildCorridorCard(c,destination,commLabelHTML) {
     <div class="corridor-card" data-id="${c.id}">
       <div class="card-top" style="margin-bottom:12px">
         <div class="co-avatar" ${avatarStyle(c.name)}>${initials(c.name)}</div>
-        <div style="flex:1"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div class="co-name">${c.name}</div>${relStatusTag(c.relationship_status||'Pipeline')}</div>
+        <div style="flex:1"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div class="co-name">${c.name}</div>${relStatusTag(c.partnership_status||c.relationship_status||'Pipeline', c.partnership_direction, c.partnership_phase)}</div>
         <div class="co-meta">${c.company_type||'—'}${c.country_of_origin?' · '+c.country_of_origin:''}</div></div>
       </div>
       <div class="corridor-detail">
@@ -873,11 +814,19 @@ async function handleSaveCountry() {
 /* ════════════════════════════════════════════════
    COMPANY MODAL
 ════════════════════════════════════════════════ */
+
+function updatePhaseVisibility() {
+  const status    = document.getElementById('f-partnership-status')?.value;
+  const phaseWrap = document.getElementById('f-partnership-phase-wrap');
+  if (phaseWrap) phaseWrap.style.display = status === 'In Progress' ? '' : 'none';
+}
+
 function bindModal() {
   document.getElementById('mod-overlay')?.addEventListener('click', e=>{
     if (e.target===document.getElementById('mod-overlay')) closeModal();
   });
   document.getElementById('mod-cancel')?.addEventListener('click', closeModal);
+  document.getElementById('f-partnership-status')?.addEventListener('change', updatePhaseVisibility);
   document.getElementById('mod-save')?.addEventListener('click', handleSave);
   document.getElementById('mod-del')?.addEventListener('click', handleDelete);
   document.getElementById('add-country-btn')?.addEventListener('click', addCountryRow);
@@ -891,11 +840,14 @@ function populateOriginDropdown() {
 }
 
 function clearModal() {
-  ['f-id','f-name','f-local-market-name','f-website','f-contact-name','f-contact-email',
+  ['f-id','f-name','f-website','f-contact-name','f-contact-email',
    'f-contact-phone','f-notes','f-agreement-date','f-golive-date','f-review-date']
     .forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
   document.getElementById('f-type').value='';
-  document.getElementById('f-status').value='Pipeline';
+  document.getElementById('f-partnership-status').value='Pipeline';
+  document.getElementById('f-partnership-direction').value='';
+  document.getElementById('f-partnership-phase').value='';
+  updatePhaseVisibility();
 }
 
 function openAddModal() {
@@ -914,9 +866,11 @@ function openEditModal(id) {
   const c=window.ALL_COMPANIES.find(x=>x.id===id); if(!c) return;
   document.getElementById('f-id').value            =c.id;
   document.getElementById('f-name').value          =c.name;
-  document.getElementById('f-local-market-name').value =c.local_market_name||'';
   document.getElementById('f-type').value          =c.company_type         ||'';
-  document.getElementById('f-status').value        =c.relationship_status  ||'Pipeline';
+  document.getElementById('f-partnership-status').value    = c.partnership_status    || 'Pipeline';
+  document.getElementById('f-partnership-direction').value = c.partnership_direction || '';
+  document.getElementById('f-partnership-phase').value     = c.partnership_phase     || '';
+  updatePhaseVisibility();
   document.getElementById('f-website').value       =c.website              ||'';
   document.getElementById('f-agreement-date').value=c.agreement_date       ||'';
   document.getElementById('f-golive-date').value   =c.go_live_date          ||'';
@@ -929,11 +883,7 @@ function openEditModal(id) {
   document.getElementById('f-origin').value        =c.country_of_origin    ||'';
   window.COUNTRY_LINKS=(c.countries||[]).map(co=>({
     countryId:co.id,countryName:co.name,flag:co.flag,direction:co.direction||'',
-    transactions:(co.transactions||[]).map(t=>({
-      txType:t.txType,currencies:t.currencies||[],segments:t.segments||[],
-      limitMin:t.limitMin??'',limitMax:t.limitMax??'',
-      limitCurrency:t.limitCurrency||'',limitPeriod:t.limitPeriod||''
-    }))
+    transactions:(co.transactions||[]).map(t=>({txType:t.txType,currencies:t.currencies||[],segments:t.segments||[]}))
   }));
   renderCountryLinks();
   document.getElementById('mod-title').textContent=`Edit Partner`;
@@ -950,7 +900,7 @@ function addCountryRow() {
   setTimeout(()=>{document.getElementById('country-links-list').scrollTop=99999;},50);
 }
 function removeCountryRow(ci){window.COUNTRY_LINKS.splice(ci,1);renderCountryLinks();}
-function addTxRow(ci){syncCountryRow(ci);window.COUNTRY_LINKS[ci].transactions.push({txType:'',currencies:[],segments:[],limitMin:'',limitMax:'',limitCurrency:'',limitPeriod:''});renderCountryLinks();}
+function addTxRow(ci){syncCountryRow(ci);window.COUNTRY_LINKS[ci].transactions.push({txType:'',currencies:[],segments:[]});renderCountryLinks();}
 function removeTxRow(ci,ti){syncCountryRow(ci);window.COUNTRY_LINKS[ci].transactions.splice(ti,1);renderCountryLinks();}
 
 function syncCountryRow(ci) {
@@ -965,13 +915,9 @@ function syncCountryRow(ci) {
     const curs=[...txRow.querySelectorAll('input[data-type="cur"]:checked')].map(el=>el.value);
     const segs=[...txRow.querySelectorAll('input[data-type="seg"]:checked')].map(el=>el.value);
     if(window.COUNTRY_LINKS[ci].transactions[ti]){
-      window.COUNTRY_LINKS[ci].transactions[ti].txType        = txSel.value;
-      window.COUNTRY_LINKS[ci].transactions[ti].currencies    = curs;
-      window.COUNTRY_LINKS[ci].transactions[ti].segments      = segs;
-      window.COUNTRY_LINKS[ci].transactions[ti].limitMin      = txRow.querySelector('.tx-limit-min')?.value  ?? '';
-      window.COUNTRY_LINKS[ci].transactions[ti].limitMax      = txRow.querySelector('.tx-limit-max')?.value  ?? '';
-      window.COUNTRY_LINKS[ci].transactions[ti].limitCurrency = txRow.querySelector('.tx-limit-cur')?.value  || '';
-      window.COUNTRY_LINKS[ci].transactions[ti].limitPeriod   = txRow.querySelector('.tx-limit-per')?.value  || '';
+      window.COUNTRY_LINKS[ci].transactions[ti].txType=txSel.value;
+      window.COUNTRY_LINKS[ci].transactions[ti].currencies=curs;
+      window.COUNTRY_LINKS[ci].transactions[ti].segments=segs;
     }
   });
 }
@@ -1011,35 +957,6 @@ function renderCountryLinks() {
                 <div class="pill-group">${CURRENCIES.map(cu=>`<label class="pill"><input type="checkbox" data-type="cur" value="${cu}" onchange="syncCountryRow(${ci})" ${(tx.currencies||[]).includes(cu)?'checked':''}/>${cu}</label>`).join('')}</div>
                 <div class="tx-sub-label" style="margin-top:8px">Customer Segments</div>
                 <div class="pill-group">${SEGMENTS.map(s=>`<label class="pill"><input type="checkbox" data-type="seg" value="${s}" onchange="syncCountryRow(${ci})" ${(tx.segments||[]).includes(s)?'checked':''}/>${s}</label>`).join('')}</div>
-                <div class="tx-sub-label" style="margin-top:12px">Transaction Limits <span style="font-size:10px;color:var(--tx3);font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div>
-                <div style="display:grid;grid-template-columns:1fr 1fr 80px 1fr;gap:6px;align-items:center">
-                  <div>
-                    <div style="font-size:10px;color:var(--tx3);margin-bottom:3px">Min Amount</div>
-                    <input class="form-input tx-limit-min" type="number" step="0.01" min="0" onchange="syncCountryRow(${ci})" value="${tx.limitMin??''}" placeholder="e.g. 10" style="height:34px;font-size:12px" />
-                  </div>
-                  <div>
-                    <div style="font-size:10px;color:var(--tx3);margin-bottom:3px">Max Amount</div>
-                    <input class="form-input tx-limit-max" type="number" step="0.01" min="0" onchange="syncCountryRow(${ci})" value="${tx.limitMax??''}" placeholder="e.g. 10000" style="height:34px;font-size:12px" />
-                  </div>
-                  <div>
-                    <div style="font-size:10px;color:var(--tx3);margin-bottom:3px">Currency</div>
-                    <select class="form-select tx-limit-cur" onchange="syncCountryRow(${ci})" style="height:34px;font-size:12px;padding:0 6px">
-                      <option value="">—</option>
-                      ${CURRENCIES.map(cu=>`<option value="${cu}" ${tx.limitCurrency===cu?'selected':''}>${cu}</option>`).join('')}
-                    </select>
-                  </div>
-                  <div>
-                    <div style="font-size:10px;color:var(--tx3);margin-bottom:3px">Per Period</div>
-                    <select class="form-select tx-limit-per" onchange="syncCountryRow(${ci})" style="height:34px;font-size:12px;padding:0 6px">
-                      <option value="">—</option>
-                      <option value="per_transaction" ${tx.limitPeriod==='per_transaction'?'selected':''}>Per Transaction</option>
-                      <option value="per_day"         ${tx.limitPeriod==='per_day'?'selected':''}>Per Day</option>
-                      <option value="per_week"        ${tx.limitPeriod==='per_week'?'selected':''}>Per Week</option>
-                      <option value="per_month"       ${tx.limitPeriod==='per_month'?'selected':''}>Per Month</option>
-                      <option value="per_year"        ${tx.limitPeriod==='per_year'?'selected':''}>Per Year</option>
-                    </select>
-                  </div>
-                </div>
               </div>`).join('')}
         </div>
         <button class="btn btn-ghost tx-add-btn" onclick="addTxRow(${ci})" type="button">+ Add Transaction</button>
@@ -1067,9 +984,11 @@ async function handleSave() {
 
   const payload = {
     name,
-    localMarketName:     document.getElementById('f-local-market-name').value.trim()||null,
-    type:                document.getElementById('f-type').value           ||null,
-    relationshipStatus:  document.getElementById('f-status').value         ||'Pipeline',
+    type:                  document.getElementById('f-type').value ||null,
+    partnershipStatus:     document.getElementById('f-partnership-status').value     ||'Pipeline',
+    partnershipDirection:  document.getElementById('f-partnership-direction').value  ||null,
+    partnershipPhase:      document.getElementById('f-partnership-phase').value      ||null,
+    relationshipStatus:    document.getElementById('f-partnership-status').value     ||'Pipeline',
     countryOfOrigin:     document.getElementById('f-origin').value         ||null,
     website:             document.getElementById('f-website').value.trim() ||null,
     agreementDate:       document.getElementById('f-agreement-date').value ||null,
@@ -1087,7 +1006,7 @@ async function handleSave() {
   try {
     if (id) {
       await dbUpdateCompany(+id, payload);
-      await dbLogActivity('updated', +id, name, `Status: ${payload.relationshipStatus}`);
+      await dbLogActivity('updated', +id, name, `Status: ${payload.partnershipStatus}${payload.partnershipPhase?' · '+payload.partnershipPhase:''}`);
       showToast(`✓ ${name} updated`);
     } else {
       const company = await dbAddCompany(payload);

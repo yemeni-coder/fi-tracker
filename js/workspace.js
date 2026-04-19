@@ -570,7 +570,7 @@ async function renderWsCompanies() {
               <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                 <div class="co-name-link" style="font-family:'Syne',sans-serif;font-weight:600;font-size:15px;cursor:pointer;color:var(--accent)">${c.name} <span style="font-size:11px;opacity:0.6">↗</span></div>
                 ${pinned ? `<span title="Pinned">📌</span>` : ''}
-                ${relStatusTag(c.relationship_status||'Pipeline')}
+                ${relStatusTag(c.partnership_status||c.relationship_status||'Pipeline', c.partnership_direction, c.partnership_phase)}
               </div>
               <div style="font-size:12px;color:var(--tx2);margin-top:2px">
                 ${c.company_type||'—'}${c.country_of_origin?' · '+c.country_of_origin:''}
@@ -961,7 +961,7 @@ function renderWsReviewCard(allActs) {
         <div style="flex:1">
           <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:17px">${c.name}</div>
           <div style="font-size:12px;color:var(--tx2);margin-top:2px">${c.company_type||'—'}${c.country_of_origin?' · '+c.country_of_origin:''}</div>
-          <div style="margin-top:6px">${relStatusTag(c.relationship_status||'Pipeline')}</div>
+          <div style="margin-top:6px">${relStatusTag(c.partnership_status||c.relationship_status||'Pipeline', c.partnership_direction, c.partnership_phase)}</div>
         </div>
       </div>
 

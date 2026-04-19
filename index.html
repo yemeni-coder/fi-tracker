@@ -200,17 +200,11 @@
             <select class="filter-sel" id="filter-country"><option value="">All countries</option></select>
             <select class="filter-sel" id="filter-status">
               <option value="">All statuses</option>
-              <option>Sending & Receiving</option>
-              <option>Sending Only</option>
-              <option>Receiving Only</option>
-              <option>Pipeline</option>
-              <option>Under Discussion</option>
-              <option>Agreement in Progress</option>
-              <option>Agreement Signed</option>
-              <option>On-boarding</option>
-              <option>On Hold</option>
-              <option>Suspended</option>
-              <option>Inactive</option>
+              <option value="Active">✅ Active</option>
+              <option value="In Progress">🔄 In Progress</option>
+              <option value="On Hold">⏸ On Hold</option>
+              <option value="Inactive">❌ Inactive</option>
+              <option value="Pipeline">◎ Pipeline</option>
             </select>
           </div>
           <div id="co-loading" class="loading-state"><div class="spinner"></div><p>Loading partners…</p></div>
@@ -556,21 +550,37 @@
         </div>
 
         <!-- Relationship status -->
-        <div class="modal-section-title">Relationship Status</div>
-        <div class="form-group">
-          <label class="form-label">Current Status</label>
-          <select class="form-select" id="f-status">
-            <option>Sending & Receiving</option>
-            <option>Sending Only</option>
-            <option>Receiving Only</option>
-            <option selected>Pipeline</option>
-            <option>Under Discussion</option>
-            <option>Agreement in Progress</option>
-            <option>Agreement Signed</option>
-            <option>On-boarding</option>
-            <option>On Hold</option>
-            <option>Suspended</option>
-            <option>Inactive</option>
+        <div class="modal-section-title">Partnership Status</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Status *</label>
+            <select class="form-select" id="f-partnership-status">
+              <option value="Active">✅ Active</option>
+              <option value="In Progress">🔄 In Progress</option>
+              <option value="On Hold">⏸ On Hold</option>
+              <option value="Inactive">❌ Inactive</option>
+              <option value="Pipeline" selected>◎ Pipeline</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Direction</label>
+            <select class="form-select" id="f-partnership-direction">
+              <option value="">Not set</option>
+              <option value="both">⇄ Sending &amp; Receiving</option>
+              <option value="send">→ Sending Only</option>
+              <option value="receive">← Receiving Only</option>
+            </select>
+          </div>
+        </div>
+        <!-- Phase — only shown when status is In Progress -->
+        <div class="form-group" id="f-partnership-phase-wrap" style="display:none">
+          <label class="form-label">Phase</label>
+          <select class="form-select" id="f-partnership-phase">
+            <option value="">Select phase…</option>
+            <option value="Under Discussion">Under Discussion</option>
+            <option value="Agreement in Progress">Agreement in Progress</option>
+            <option value="Agreement Signed">Agreement Signed</option>
+            <option value="On-boarding">On-boarding</option>
           </select>
         </div>
 

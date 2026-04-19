@@ -2,12 +2,28 @@
    js/companies.js
 ════════════════════════════════════════════════ */
 
-const RELATIONSHIP_STATUSES = [
-  'Sending & Receiving','Sending Only','Receiving Only',
-  'Pipeline','Under Discussion','Agreement in Progress',
-  'Agreement Signed','On-boarding','On Hold','Suspended','Inactive'
+/* ── New two-field status system ── */
+const PARTNERSHIP_STATUSES = ['Active','In Progress','On Hold','Inactive','Pipeline'];
+
+const PARTNERSHIP_PHASES = [
+  'Under Discussion','Agreement in Progress','Agreement Signed','On-boarding'
 ];
 
+const PARTNERSHIP_DIRECTIONS = [
+  { value: 'both',    label: '⇄ Sending & Receiving' },
+  { value: 'send',    label: '→ Sending Only'         },
+  { value: 'receive', label: '← Receiving Only'       }
+];
+
+const PARTNERSHIP_STATUS_STYLE = {
+  'Active':      { cls: 'rs-active',    icon: '●' },
+  'In Progress': { cls: 'rs-progress',  icon: '◐' },
+  'On Hold':     { cls: 'rs-hold',      icon: '⏸' },
+  'Inactive':    { cls: 'rs-inactive',  icon: '○' },
+  'Pipeline':    { cls: 'rs-pipeline',  icon: '◎' }
+};
+
+/* Keep old REL_STATUS_STYLE for backward compat with old data */
 const REL_STATUS_STYLE = {
   'Sending & Receiving':   { cls: 'rs-active',    label: '⇄ Sending & Receiving'   },
   'Sending Only':          { cls: 'rs-active',    label: '→ Sending Only'           },
@@ -53,7 +69,17 @@ function avatarStyle(name, size = 44, radius = 10) {
   return `style="width:${size}px;height:${size}px;border-radius:${radius}px;background:${c.bg};border:1px solid ${c.border};display:flex;align-items:center;justify-content:center;font-family:'Syne',sans-serif;font-weight:700;font-size:${Math.floor(size*0.34)}px;color:${c.text};flex-shrink:0"`;
 }
 
-function relStatusTag(status) {
+function relStatusTag(status, direction, phase) {
+  /* New two-field system */
+  if (PARTNERSHIP_STATUS_STYLE[status]) {
+    const s   = PARTNERSHIP_STATUS_STYLE[status];
+    const dir = direction === 'both' ? '⇄' : direction === 'send' ? '→' : direction === 'receive' ? '←' : '';
+    const dirLabel = direction === 'both' ? ' S&R' : direction === 'send' ? ' Send' : direction === 'receive' ? ' Receive' : '';
+    const phaseTag = (status === 'In Progress' && phase)
+      ? `<span class="status-tag rs-progress" style="font-size:10px;margin-left:4px">${phase}</span>` : '';
+    return `<span class="status-tag ${s.cls}">${s.icon}${dir ? ' ' + dir : ''} ${status}${dirLabel}</span>${phaseTag}`;
+  }
+  /* Fallback for old data */
   const s = REL_STATUS_STYLE[status] || REL_STATUS_STYLE['Pipeline'];
   return `<span class="status-tag ${s.cls}">${s.label}</span>`;
 }
@@ -94,7 +120,7 @@ function getFilteredCompanies() {
                    || (c.local_market_name||'').toLowerCase().includes(query);
     const matchDir  = !dirVal || dirs.includes(dirVal) || (dirVal==='both'&&dirs.includes('send')&&dirs.includes('receive'));
     const matchCtry = !ctryVal || ctryNames.includes(ctryVal);
-    const matchStat = !statVal || (c.relationship_status||'') === statVal;
+    const matchStat = !statVal || (c.partnership_status||c.relationship_status||'') === statVal;
     return matchName && matchDir && matchCtry && matchStat;
   });
 }
@@ -145,7 +171,7 @@ function buildCompanyCard(c) {
           <div class="co-name">${c.name}</div>
           ${c.local_market_name ? `<div style="font-size:11px;color:var(--accent);margin-top:1px;font-style:italic">aka ${c.local_market_name}</div>` : ''}
           <div class="co-meta">${c.company_type||'—'}${c.country_of_origin?' · '+c.country_of_origin:''}</div>
-          <div style="margin-top:5px">${relStatusTag(c.relationship_status||'Pipeline')}</div>
+          <div style="margin-top:5px">${relStatusTag(c.partnership_status||c.relationship_status||'Pipeline', c.partnership_direction, c.partnership_phase)}</div>
         </div>
       </div>
       <div class="co-pills">${pills}${more}</div>
@@ -175,7 +201,7 @@ function buildCompanyRow(c) {
           </div>
         </div>
       </td>
-      <td>${relStatusTag(c.relationship_status||'Pipeline')}</td>
+      <td>${relStatusTag(c.partnership_status||c.relationship_status||'Pipeline', c.partnership_direction, c.partnership_phase)}</td>
       <td>${(c.countries||[]).length}</td>
       <td>${dir?makeTag(dirLabel(dir),'t-dir'):'—'}</td>
       <td>${allCur.slice(0,3).map(cu=>makeTag(cu,'t-cur')).join(' ')||'—'}</td>
@@ -278,7 +304,7 @@ function openCompanyDetail(id) {
     <div>
       <div class="sec-label">Relationship Status</div>
       <div class="sec" style="padding:14px 18px">
-        ${relStatusTag(c.relationship_status||'Pipeline')}
+        ${relStatusTag(c.partnership_status||c.relationship_status||'Pipeline', c.partnership_direction, c.partnership_phase)}
         ${c.website?`<a href="${c.website}" target="_blank" style="font-size:12px;color:var(--accent);margin-left:10px">${c.website} ↗</a>`:''}
       </div>
     </div>
@@ -663,7 +689,11 @@ async function exportCompanyPDF(c) {
     </div>
     <div style="text-align:right;flex-shrink:0">
       <div style="font-size:11px;color:#999;margin-bottom:4px">RELATIONSHIP STATUS</div>
-      <div style="font-size:13px;font-weight:600;color:${col.text}">${c.relationship_status||'Pipeline'}</div>
+      <div style="font-size:13px;font-weight:600;color:${col.text}">
+        ${c.partnership_status||c.relationship_status||'Pipeline'}
+        ${c.partnership_direction === 'both' ? ' · ⇄ Sending & Receiving' : c.partnership_direction === 'send' ? ' · → Sending Only' : c.partnership_direction === 'receive' ? ' · ← Receiving Only' : ''}
+        ${c.partnership_phase ? ' · ' + c.partnership_phase : ''}
+      </div>
       <div style="font-size:11px;color:#999;margin-top:8px">Generated ${new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})}</div>
     </div>
   </div>

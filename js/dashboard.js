@@ -9,7 +9,7 @@ function renderDashboard() {
 
   const allCountryNames = [...new Set(cos.flatMap(c => (c.countries||[]).map(x=>x.name)))];
   const allCurrencies   = [...new Set(cos.flatMap(c => (c.countries||[]).flatMap(x=>(x.transactions||[]).flatMap(t=>t.currencies||[]))))];
-  const active          = cos.filter(c => ['Sending & Receiving','Sending Only','Receiving Only'].includes(c.relationship_status));
+  const active          = cos.filter(c => (c.partnership_status||c.relationship_status)==='Active' || (c.partnership_status||c.relationship_status)==='Active' || ['Sending & Receiving','Sending Only','Receiving Only'].includes(c.relationship_status));
 
   /* ── Export button ── */
   document.getElementById('dash-export-wrap').innerHTML = `
@@ -54,7 +54,7 @@ function renderDashboard() {
   const ctryCount   = {};
 
   cos.forEach(c => {
-    const rs = c.relationship_status || 'Pipeline';
+    const rs = c.partnership_status || c.relationship_status || 'Pipeline';
     statusCount[rs] = (statusCount[rs]||0) + 1;
     const t = c.company_type || 'Unknown';
     typeCount[t] = (typeCount[t]||0) + 1;
@@ -161,7 +161,7 @@ function handleDashClick(type, value) {
     case 'all-companies':
       openDashPanel('🏢', 'All Partners', `${cos.length} companies`, buildCompanyListHTML(cos)); break;
     case 'active-companies': {
-      const f = cos.filter(c=>['Sending & Receiving','Sending Only','Receiving Only'].includes(c.relationship_status));
+      const f = cos.filter(c=>(c.partnership_status||c.relationship_status)==='Active' || (c.partnership_status||c.relationship_status)==='Active' || ['Sending & Receiving','Sending Only','Receiving Only'].includes(c.relationship_status));
       openDashPanel('✅', 'Active Partners', `${f.length} operational`, buildCompanyListHTML(f)); break;
     }
     case 'all-countries': {
@@ -173,7 +173,7 @@ function handleDashClick(type, value) {
       openDashPanel('💱', 'All Currencies', `${curs.length} in use`, buildCurrencyListHTML(curs, cos)); break;
     }
     case 'status': {
-      const f = cos.filter(c=>(c.relationship_status||'Pipeline')===value);
+      const f = cos.filter(c=>(c.partnership_status||c.relationship_status||'Pipeline')===value);
       openDashPanel('🏷️', value, `${f.length} partner${f.length!==1?'s':''}`, buildCompanyListHTML(f)); break;
     }
     case 'type': {
@@ -226,7 +226,7 @@ function buildCompanyListHTML(companies, highlightTx=null) {
         <div style="flex:1;min-width:0">
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
             <div class="det-name">${c.name}</div>
-            ${relStatusTag(c.relationship_status||'Pipeline')}
+            ${relStatusTag(c.partnership_status||c.relationship_status||'Pipeline', c.partnership_direction, c.partnership_phase)}
           </div>
           <div style="font-size:11px;color:var(--tx2);margin-bottom:4px">${c.company_type||'—'} · ${(c.countries||[]).length} countr${(c.countries||[]).length!==1?'ies':'y'}</div>
           <div style="display:flex;flex-wrap:wrap;gap:4px">
@@ -282,14 +282,14 @@ function exportToExcel() {
     const rows = [];
     cos.forEach(c => {
       if (!c.countries||c.countries.length===0) {
-        rows.push({ 'Company':c.name,'Type':c.company_type||'','Origin':c.country_of_origin||'','Status':c.relationship_status||'','Agreement Date':c.agreement_date||'','Go-Live Date':c.go_live_date||'','Contact':c.contact_name||'','Email':c.contact_email||'','Phone':c.contact_phone||'','Country':'','Direction':'','Transaction Type':'','Currencies':'','Segments':'','Notes':c.notes||'' });
+        rows.push({ 'Company':c.name,'Type':c.company_type||'','Origin':c.country_of_origin||'','Status':c.partnership_status||c.relationship_status||'','Agreement Date':c.agreement_date||'','Go-Live Date':c.go_live_date||'','Contact':c.contact_name||'','Email':c.contact_email||'','Phone':c.contact_phone||'','Country':'','Direction':'','Transaction Type':'','Currencies':'','Segments':'','Notes':c.notes||'' });
       } else {
         c.countries.forEach(co => {
           if (!co.transactions||co.transactions.length===0) {
-            rows.push({ 'Company':c.name,'Type':c.company_type||'','Origin':c.country_of_origin||'','Status':c.relationship_status||'','Agreement Date':c.agreement_date||'','Go-Live Date':c.go_live_date||'','Contact':c.contact_name||'','Email':c.contact_email||'','Phone':c.contact_phone||'','Country':co.name,'Direction':co.direction||'','Transaction Type':'','Currencies':'','Segments':'','Notes':c.notes||'' });
+            rows.push({ 'Company':c.name,'Type':c.company_type||'','Origin':c.country_of_origin||'','Status':c.partnership_status||c.relationship_status||'','Agreement Date':c.agreement_date||'','Go-Live Date':c.go_live_date||'','Contact':c.contact_name||'','Email':c.contact_email||'','Phone':c.contact_phone||'','Country':co.name,'Direction':co.direction||'','Transaction Type':'','Currencies':'','Segments':'','Notes':c.notes||'' });
           } else {
             co.transactions.forEach(tx => {
-              rows.push({ 'Company':c.name,'Type':c.company_type||'','Origin':c.country_of_origin||'','Status':c.relationship_status||'','Agreement Date':c.agreement_date||'','Go-Live Date':c.go_live_date||'','Contact':c.contact_name||'','Email':c.contact_email||'','Phone':c.contact_phone||'','Country':co.name,'Direction':co.direction||'','Transaction Type':tx.txType||'','Currencies':(tx.currencies||[]).join(', '),'Segments':(tx.segments||[]).join(', '),'Notes':c.notes||'' });
+              rows.push({ 'Company':c.name,'Type':c.company_type||'','Origin':c.country_of_origin||'','Status':c.partnership_status||c.relationship_status||'','Agreement Date':c.agreement_date||'','Go-Live Date':c.go_live_date||'','Contact':c.contact_name||'','Email':c.contact_email||'','Phone':c.contact_phone||'','Country':co.name,'Direction':co.direction||'','Transaction Type':tx.txType||'','Currencies':(tx.currencies||[]).join(', '),'Segments':(tx.segments||[]).join(', '),'Notes':c.notes||'' });
             });
           }
         });
