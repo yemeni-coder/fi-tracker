@@ -38,14 +38,42 @@ async function authSignIn(email, password) {
   return data;
 }
 
+async function authRefreshSession() {
+  try {
+    const stored = localStorage.getItem('fi_session');
+    if (!stored) return null;
+    const session = JSON.parse(stored);
+    if (!session.refresh_token) return null;
+    const res = await fetch(`${CONFIG.SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+      method: 'POST',
+      headers: { 'apikey': CONFIG.SUPABASE_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: session.refresh_token })
+    });
+    if (!res.ok) { localStorage.removeItem('fi_session'); return null; }
+    const data = await res.json();
+    localStorage.setItem('fi_session', JSON.stringify({
+      access_token: data.access_token, refresh_token: data.refresh_token
+    }));
+    return data;
+  } catch(e) { return null; }
+}
+
 async function authGetSession() {
   const stored = localStorage.getItem('fi_session');
   if (!stored) return null;
   const session = JSON.parse(stored);
-  const res = await fetch(`${CONFIG.SUPABASE_URL}/auth/v1/user`, {
+  let res = await fetch(`${CONFIG.SUPABASE_URL}/auth/v1/user`, {
     headers: { 'apikey': CONFIG.SUPABASE_KEY, 'Authorization': `Bearer ${session.access_token}` }
   });
-  if (!res.ok) { localStorage.removeItem('fi_session'); return null; }
+  if (!res.ok) {
+    const refreshed = await authRefreshSession();
+    if (!refreshed) { localStorage.removeItem('fi_session'); return null; }
+    res = await fetch(`${CONFIG.SUPABASE_URL}/auth/v1/user`, {
+      headers: { 'apikey': CONFIG.SUPABASE_KEY, 'Authorization': `Bearer ${refreshed.access_token}` }
+    });
+    if (!res.ok) { localStorage.removeItem('fi_session'); return null; }
+    return { ...refreshed, user: await res.json() };
+  }
   return { ...session, user: await res.json() };
 }
 
@@ -68,6 +96,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   loadSavedTheme();
   bindTheme();
   bindLogin();
+  window.addEventListener('offline', () => showToast('⚠️ You are offline — changes may not save'));
+  window.addEventListener('online',  () => showToast('✓ Connection restored'));
   const session = await authGetSession();
   if (session) {
     const profile             = await dbGetUserProfile(session.user.id).catch(() => ({ role:'viewer', display_name:null }));
@@ -598,6 +628,7 @@ function initCorridorPage() {
   ).values()].sort((a,b)=>a.name.localeCompare(b.name));
 
   // Populate datalist
+  injectCorridorFilters();
   const datalist = document.getElementById('corridor-countries-list');
   if (datalist) {
     datalist.innerHTML = linkedCountries.map(co =>
@@ -657,6 +688,52 @@ function initCorridorPage() {
   }
 }
 
+/* ════════════════════════════════════════════════
+   CORRIDOR SEARCH FILTERS
+════════════════════════════════════════════════ */
+function injectCorridorFilters() {
+  if (document.getElementById('corridor-filter-bar')) return;
+  const corridorBox = document.querySelector('.corridor-box');
+  if (!corridorBox) return;
+  const bar = document.createElement('div');
+  bar.id = 'corridor-filter-bar';
+  bar.style.cssText = 'display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;align-items:flex-end;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r3);padding:16px 20px';
+  bar.innerHTML = `
+    <div style="flex:1;min-width:160px">
+      <div style="font-size:11px;font-weight:600;color:var(--tx3);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:5px">Transaction Type</div>
+      <select class="filter-sel" id="corridor-filter-type" style="width:100%;height:40px">
+        <option value="">All types</option>
+        ${TX_TYPES.map(t=>`<option value="${t}">${t}</option>`).join('')}
+      </select>
+    </div>
+    <div style="flex:1;min-width:140px">
+      <div style="font-size:11px;font-weight:600;color:var(--tx3);text-transform:uppercase;letter-spacing:0.6px;margin-bottom:5px">Currency</div>
+      <select class="filter-sel" id="corridor-filter-currency" style="width:100%;height:40px">
+        <option value="">All currencies</option>
+        ${CURRENCIES.map(c=>`<option value="${c}">${c}</option>`).join('')}
+      </select>
+    </div>
+    <button class="btn btn-primary" id="corridor-filter-btn" style="height:40px;align-self:flex-end;flex-shrink:0">
+      🔍 Apply Filters
+    </button>
+    <button class="btn btn-ghost" id="corridor-filter-clear" style="height:40px;align-self:flex-end;flex-shrink:0;display:none">
+      ✕ Clear
+    </button>`;
+  corridorBox.insertAdjacentElement('afterend', bar);
+  document.getElementById('corridor-filter-btn').addEventListener('click', () => {
+    const hasTx  = !!document.getElementById('corridor-filter-type').value;
+    const hasCur = !!document.getElementById('corridor-filter-currency').value;
+    document.getElementById('corridor-filter-clear').style.display = (hasTx||hasCur) ? '' : 'none';
+    runCorridorSearch();
+  });
+  document.getElementById('corridor-filter-clear').addEventListener('click', () => {
+    document.getElementById('corridor-filter-type').value     = '';
+    document.getElementById('corridor-filter-currency').value = '';
+    document.getElementById('corridor-filter-clear').style.display = 'none';
+    runCorridorSearch();
+  });
+}
+
 async function runCorridorSearch(destination) {
   if (!destination) {
     const val = document.getElementById('corridor-to-input')?.value?.trim() || '';
@@ -665,7 +742,17 @@ async function runCorridorSearch(destination) {
   }
   const res = document.getElementById('corridor-results');
   if (!destination) { res.innerHTML=`<div class="empty-state"><div class="empty-icon">🌍</div><p>Select a destination country to see available partners</p></div>`; return; }
-  const partners  = window.ALL_COMPANIES.filter(c=>(c.countries||[]).some(co=>co.name===destination));
+  const filterTxType = document.getElementById('corridor-filter-type')?.value  || '';
+  const filterCur    = document.getElementById('corridor-filter-currency')?.value || '';
+  let partners = window.ALL_COMPANIES.filter(c=>(c.countries||[]).some(co=>co.name===destination));
+  if (filterTxType) {
+    partners = partners.filter(c=>(c.countries||[]).some(co=>co.name===destination &&
+      (co.transactions||[]).some(t=>t.txType===filterTxType)));
+  }
+  if (filterCur) {
+    partners = partners.filter(c=>(c.countries||[]).some(co=>co.name===destination &&
+      (co.transactions||[]).some(t=>(t.currencies||[]).includes(filterCur))));
+  }
   if (!partners.length) { res.innerHTML=`<div class="empty-state"><div class="empty-icon">😔</div><p>No partners found for ${destination}</p></div>`; return; }
   const commMap = {};
   await Promise.all(partners.map(async p => {
@@ -733,7 +820,11 @@ async function runCorridorSearch(destination) {
     <div style="margin-top:10px"><button class="btn btn-ghost" id="corridor-pdf-btn" style="font-size:12px">🖨 Export PDF</button></div>
     ${section('● Active',active)}${section('◐ In Progress',inprog)}${section('◎ Pipeline',pipeline)}${section('Other',other)}`;
   res.querySelectorAll('.corridor-card').forEach(card=>card.addEventListener('click',()=>openCompanyDetail(+card.dataset.id)));
-  document.getElementById('corridor-pdf-btn')?.addEventListener('click',()=>exportCorridorPDF(destination,destFlag,partners,commMap,getBestComm));
+  document.getElementById('corridor-pdf-btn')?.addEventListener('click',()=>{
+    const txLabel  = document.getElementById('corridor-filter-type')?.value     || '';
+    const curLabel = document.getElementById('corridor-filter-currency')?.value || '';
+    exportCorridorPDF(destination,destFlag,partners,commMap,getBestComm,txLabel,curLabel);
+  });
 }
 
 function buildCorridorCard(c,destination,commLabelHTML) {
@@ -840,7 +931,7 @@ function populateOriginDropdown() {
 }
 
 function clearModal() {
-  ['f-id','f-name','f-website','f-contact-name','f-contact-email',
+  ['f-id','f-name','f-local-market-name','f-website','f-contact-name','f-contact-email',
    'f-contact-phone','f-notes','f-agreement-date','f-golive-date','f-review-date']
     .forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
   document.getElementById('f-type').value='';
@@ -866,6 +957,7 @@ function openEditModal(id) {
   const c=window.ALL_COMPANIES.find(x=>x.id===id); if(!c) return;
   document.getElementById('f-id').value            =c.id;
   document.getElementById('f-name').value          =c.name;
+  document.getElementById('f-local-market-name').value =c.local_market_name||'';
   document.getElementById('f-type').value          =c.company_type         ||'';
   document.getElementById('f-partnership-status').value    = c.partnership_status    || 'Pipeline';
   document.getElementById('f-partnership-direction').value = c.partnership_direction || '';
@@ -883,7 +975,11 @@ function openEditModal(id) {
   document.getElementById('f-origin').value        =c.country_of_origin    ||'';
   window.COUNTRY_LINKS=(c.countries||[]).map(co=>({
     countryId:co.id,countryName:co.name,flag:co.flag,direction:co.direction||'',
-    transactions:(co.transactions||[]).map(t=>({txType:t.txType,currencies:t.currencies||[],segments:t.segments||[]}))
+    transactions:(co.transactions||[]).map(t=>({
+      txType:t.txType,currencies:t.currencies||[],segments:t.segments||[],
+      limitMin:t.limitMin??'',limitMax:t.limitMax??'',
+      limitCurrency:t.limitCurrency||'',limitPeriod:t.limitPeriod||''
+    }))
   }));
   renderCountryLinks();
   document.getElementById('mod-title').textContent=`Edit Partner`;
@@ -900,7 +996,7 @@ function addCountryRow() {
   setTimeout(()=>{document.getElementById('country-links-list').scrollTop=99999;},50);
 }
 function removeCountryRow(ci){window.COUNTRY_LINKS.splice(ci,1);renderCountryLinks();}
-function addTxRow(ci){syncCountryRow(ci);window.COUNTRY_LINKS[ci].transactions.push({txType:'',currencies:[],segments:[]});renderCountryLinks();}
+function addTxRow(ci){syncCountryRow(ci);window.COUNTRY_LINKS[ci].transactions.push({txType:'',currencies:[],segments:[],limitMin:'',limitMax:'',limitCurrency:'',limitPeriod:''});renderCountryLinks();}
 function removeTxRow(ci,ti){syncCountryRow(ci);window.COUNTRY_LINKS[ci].transactions.splice(ti,1);renderCountryLinks();}
 
 function syncCountryRow(ci) {
@@ -915,9 +1011,13 @@ function syncCountryRow(ci) {
     const curs=[...txRow.querySelectorAll('input[data-type="cur"]:checked')].map(el=>el.value);
     const segs=[...txRow.querySelectorAll('input[data-type="seg"]:checked')].map(el=>el.value);
     if(window.COUNTRY_LINKS[ci].transactions[ti]){
-      window.COUNTRY_LINKS[ci].transactions[ti].txType=txSel.value;
-      window.COUNTRY_LINKS[ci].transactions[ti].currencies=curs;
-      window.COUNTRY_LINKS[ci].transactions[ti].segments=segs;
+      window.COUNTRY_LINKS[ci].transactions[ti].txType        = txSel.value;
+      window.COUNTRY_LINKS[ci].transactions[ti].currencies    = curs;
+      window.COUNTRY_LINKS[ci].transactions[ti].segments      = segs;
+      window.COUNTRY_LINKS[ci].transactions[ti].limitMin      = txRow.querySelector('.tx-limit-min')?.value ?? '';
+      window.COUNTRY_LINKS[ci].transactions[ti].limitMax      = txRow.querySelector('.tx-limit-max')?.value ?? '';
+      window.COUNTRY_LINKS[ci].transactions[ti].limitCurrency = txRow.querySelector('.tx-limit-cur')?.value || '';
+      window.COUNTRY_LINKS[ci].transactions[ti].limitPeriod   = txRow.querySelector('.tx-limit-per')?.value || '';
     }
   });
 }
@@ -957,6 +1057,35 @@ function renderCountryLinks() {
                 <div class="pill-group">${CURRENCIES.map(cu=>`<label class="pill"><input type="checkbox" data-type="cur" value="${cu}" onchange="syncCountryRow(${ci})" ${(tx.currencies||[]).includes(cu)?'checked':''}/>${cu}</label>`).join('')}</div>
                 <div class="tx-sub-label" style="margin-top:8px">Customer Segments</div>
                 <div class="pill-group">${SEGMENTS.map(s=>`<label class="pill"><input type="checkbox" data-type="seg" value="${s}" onchange="syncCountryRow(${ci})" ${(tx.segments||[]).includes(s)?'checked':''}/>${s}</label>`).join('')}</div>
+                <div class="tx-sub-label" style="margin-top:12px">Transaction Limits <span style="font-size:10px;color:var(--tx3);font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></div>
+                <div style="display:grid;grid-template-columns:1fr 1fr 80px 1fr;gap:6px">
+                  <div>
+                    <div style="font-size:10px;color:var(--tx3);margin-bottom:3px">Min Amount</div>
+                    <input class="form-input tx-limit-min" type="number" step="0.01" min="0" onchange="syncCountryRow(${ci})" value="${tx.limitMin??''}" placeholder="e.g. 10" style="height:34px;font-size:12px" />
+                  </div>
+                  <div>
+                    <div style="font-size:10px;color:var(--tx3);margin-bottom:3px">Max Amount</div>
+                    <input class="form-input tx-limit-max" type="number" step="0.01" min="0" onchange="syncCountryRow(${ci})" value="${tx.limitMax??''}" placeholder="e.g. 10000" style="height:34px;font-size:12px" />
+                  </div>
+                  <div>
+                    <div style="font-size:10px;color:var(--tx3);margin-bottom:3px">Currency</div>
+                    <select class="form-select tx-limit-cur" onchange="syncCountryRow(${ci})" style="height:34px;font-size:12px;padding:0 6px">
+                      <option value="">—</option>
+                      ${CURRENCIES.map(cu=>`<option value="${cu}" ${tx.limitCurrency===cu?'selected':''}>${cu}</option>`).join('')}
+                    </select>
+                  </div>
+                  <div>
+                    <div style="font-size:10px;color:var(--tx3);margin-bottom:3px">Per Period</div>
+                    <select class="form-select tx-limit-per" onchange="syncCountryRow(${ci})" style="height:34px;font-size:12px;padding:0 6px">
+                      <option value="">—</option>
+                      <option value="per_transaction" ${tx.limitPeriod==='per_transaction'?'selected':''}>Per Transaction</option>
+                      <option value="per_day"         ${tx.limitPeriod==='per_day'?'selected':''}>Per Day</option>
+                      <option value="per_week"        ${tx.limitPeriod==='per_week'?'selected':''}>Per Week</option>
+                      <option value="per_month"       ${tx.limitPeriod==='per_month'?'selected':''}>Per Month</option>
+                      <option value="per_year"        ${tx.limitPeriod==='per_year'?'selected':''}>Per Year</option>
+                    </select>
+                  </div>
+                </div>
               </div>`).join('')}
         </div>
         <button class="btn btn-ghost tx-add-btn" onclick="addTxRow(${ci})" type="button">+ Add Transaction</button>
@@ -984,6 +1113,7 @@ async function handleSave() {
 
   const payload = {
     name,
+    localMarketName:       document.getElementById('f-local-market-name').value.trim()||null,
     type:                  document.getElementById('f-type').value ||null,
     partnershipStatus:     document.getElementById('f-partnership-status').value     ||'Pipeline',
     partnershipDirection:  document.getElementById('f-partnership-direction').value  ||null,
@@ -1161,7 +1291,7 @@ function loadSavedTheme() {
 /* ════════════════════════════════════════════════
    CORRIDOR PDF EXPORT
 ════════════════════════════════════════════════ */
-function exportCorridorPDF(destination, destFlag, partners, commMap, getBestComm) {
+function exportCorridorPDF(destination, destFlag, partners, commMap, getBestComm, filterTxType='', filterCurrency='') {
   const date = new Date().toLocaleDateString('en-GB', {day:'2-digit', month:'long', year:'numeric'});
 
   function sortVal(cm) {
@@ -1189,27 +1319,58 @@ function exportCorridorPDF(destination, destFlag, partners, commMap, getBestComm
 
   function buildRows(arr, label) {
     if (!arr.length) return '';
-    const rows = cheapSort(arr).map((c, i) => {
-      const co = (c.countries||[]).find(x=>x.name===destination);
-      const allCur = [...new Set((co?.transactions||[]).flatMap(t=>t.currencies||[]))].join(', ')||'—';
-      const allTx  = [...new Set((co?.transactions||[]).map(t=>t.txType).filter(Boolean))].join(', ')||'—';
-      const bg = i%2===0?'#fff':'#f8f8fc';
-      return '<tr style="background:'+bg+'">'+
-        '<td style="padding:8px 10px;border-bottom:1px solid #eee;font-size:12px"><strong>'+c.name+'</strong></td>'+
-        '<td style="padding:8px 10px;border-bottom:1px solid #eee;font-size:11px;color:#555">'+allTx+'</td>'+
-        '<td style="padding:8px 10px;border-bottom:1px solid #eee;font-size:11px;font-weight:600;color:#2E5BBA">'+allCur+'</td>'+
-        '<td style="padding:8px 10px;border-bottom:1px solid #eee;font-size:11px">'+commText(c)+'</td>'+
-        '</tr>';
+    const cards = cheapSort(arr).map((c, i) => {
+      const co  = (c.countries||[]).find(x=>x.name===destination);
+      const txs = (co?.transactions||[]);
+      const txRows = txs.length
+        ? txs.map(tx =>
+            '<tr>'+
+            '<td style="padding:5px 10px;font-size:11px;color:#1A3A6B;font-weight:600;border-bottom:1px solid #f0f0f0;white-space:nowrap">'+(tx.txType||'—')+'</td>'+
+            '<td style="padding:5px 10px;font-size:11px;font-weight:700;color:#2E5BBA;border-bottom:1px solid #f0f0f0">'+((tx.currencies||[]).join(' · ')||'—')+'</td>'+
+            '<td style="padding:5px 10px;font-size:10px;color:#666;border-bottom:1px solid #f0f0f0">'+((tx.segments||[]).join(', ')||'—')+'</td>'+
+            '</tr>'
+          ).join('')
+        : '<tr><td colspan="3" style="padding:5px 10px;font-size:11px;color:#999">No transactions defined</td></tr>';
+      const statusColor = (c.partnership_status||c.relationship_status)==='Active'||['Sending & Receiving','Sending Only','Receiving Only'].includes(c.relationship_status)
+        ? '#22c97a' : (c.partnership_status||c.relationship_status)==='In Progress'||['Agreement Signed','On-boarding','Agreement in Progress'].includes(c.relationship_status)
+        ? '#f0a832' : '#4f6ef7';
+      const bg = i%2===0 ? '#fff' : '#f9f9fc';
+      return '<div style="background:'+bg+';border:1px solid #e8e8f0;border-radius:8px;margin-bottom:10px;overflow:hidden">'+
+        '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#f4f4f8;border-bottom:1px solid #e8e8f0">'+
+          '<div style="display:flex;align-items:center;gap:10px">'+
+            '<div style="width:32px;height:32px;border-radius:8px;background:'+statusColor+'22;border:1px solid '+statusColor+'55;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;color:'+statusColor+'">'+
+              c.name.trim().split(/\s+/).slice(0,2).map(w=>w[0].toUpperCase()).join('')+
+            '</div>'+
+            '<div>'+
+              '<div style="font-size:13px;font-weight:800;color:#1A3A6B">'+c.name+'</div>'+
+              '<div style="font-size:10px;color:#888;margin-top:1px">'+(c.company_type||'Partner')+(c.country_of_origin?' · '+c.country_of_origin:'')+'</div>'+
+            '</div>'+
+          '</div>'+
+          '<div style="display:flex;align-items:center;gap:10px">'+
+            '<span style="font-size:10px;padding:3px 9px;border-radius:20px;font-weight:700;color:'+statusColor+';border:1px solid '+statusColor+';background:'+statusColor+'18">'+
+              (c.partnership_status||c.relationship_status)+
+            '</span>'+
+            '<div style="font-size:11px;text-align:right">'+commText(c)+'</div>'+
+          '</div>'+
+        '</div>'+
+        '<div style="padding:6px 14px 10px">'+
+          '<table style="width:100%;border-collapse:collapse">'+
+            '<thead><tr>'+
+              '<th style="padding:4px 10px 4px 0;text-align:left;font-size:9px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:0.8px;width:28%">Transaction Type</th>'+
+              '<th style="padding:4px 10px;text-align:left;font-size:9px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:0.8px;width:35%">Currencies</th>'+
+              '<th style="padding:4px 10px;text-align:left;font-size:9px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:0.8px">Segments</th>'+
+            '</tr></thead>'+
+            '<tbody>'+txRows+'</tbody>'+
+          '</table>'+
+        '</div>'+
+      '</div>';
     }).join('');
-    return '<div style="margin-bottom:20px">'+
-      '<div style="font-size:11px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:1px;padding:8px 10px;background:#f5f5f5;border-radius:4px 4px 0 0">'+label+' ('+arr.length+')</div>'+
-      '<table style="width:100%;border-collapse:collapse;font-family:Arial,sans-serif">'+
-      '<thead><tr style="background:#2E5BBA;color:white">'+
-      '<th style="padding:7px 10px;text-align:left;font-size:10px;width:22%">Company</th>'+
-      '<th style="padding:7px 10px;text-align:left;font-size:10px;width:22%">Transaction Types</th>'+
-      '<th style="padding:7px 10px;text-align:left;font-size:10px;width:18%">Currencies</th>'+
-      '<th style="padding:7px 10px;text-align:left;font-size:10px;width:38%">Commission</th>'+
-      '</table></thead><tbody>'+rows+'</tbody></table></div>';
+    return '<div style="margin-bottom:24px">'+
+      '<div style="font-size:11px;font-weight:700;color:#fff;text-transform:uppercase;letter-spacing:1px;padding:8px 14px;background:#1A3A6B;border-radius:6px 6px 0 0;margin-bottom:8px">'+
+        label+' ('+arr.length+')'+
+      '</div>'+
+      cards+
+    '</div>';
   }
 
   const summCards = [
@@ -1234,6 +1395,7 @@ function exportCorridorPDF(destination, destFlag, partners, commMap, getBestComm
     '<div style="font-size:10px;color:#666">\uD83C\uDDF9\uD83C\uDDF7 Turkey (Payporter) \u2192 '+destFlag+' '+destination+'</div></div></div>'+
     '<div style="text-align:right;font-size:10px;color:#666">'+
     '<div style="font-weight:700;color:#1A3A6B">Generated: '+date+'</div>'+
+    (filterTxType||filterCurrency ? '<div style="color:#1565c0;margin-top:2px">Filtered: '+(filterTxType||'All types')+' · '+(filterCurrency||'All currencies')+'</div>' : '')+
     '<div style="color:#E53935;font-weight:700;margin-top:2px">CONFIDENTIAL</div></div></div>'+
 
     '<div style="display:flex;gap:10px;margin-bottom:12px">'+summCards+'</div>'+
