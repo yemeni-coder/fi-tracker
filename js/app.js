@@ -390,7 +390,8 @@ function buildBottomNav() {
     { page:'companies', label:'Companies', icon:'<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>' },
     { page:'countries', label:'Countries', icon:'<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>' },
     { page:'corridor',  label:'Corridor',  icon:'<polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>' },
-    { page:'dashboard', label:'Dashboard', icon:'<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>' }
+    { page:'dashboard', label:'Dashboard', icon:'<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>' },
+    { page:'coverage',  label:'Map',       icon:'<circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>' }
   ];
 
   const WORKSPACE_ITEMS = [
@@ -432,7 +433,8 @@ function buildTopNav() {
     ['companies','Companies'],
     ['countries','Countries'],
     ['corridor','Corridor'],
-    ['dashboard','Dashboard']
+    ['dashboard','Dashboard'],
+    ['coverage','Map']
   ];
   const WORKSPACE = [
     ['ws-desk','My Desk'],
@@ -584,6 +586,7 @@ function navigateTo(page) {
   if (page==='countries') renderCountries(document.getElementById('ct-search').value);
   if (page==='dashboard') renderDashboard();
   if (page==='corridor')    initCorridorPage();
+  if (page==='coverage')    initCoveragePage();
   if (page==='ws-desk')     renderMyDesk();
   if (page==='ws-companies') { loadAdmins().then(() => renderWsCompanies()); }
   if (page==='ws-log')      renderWsLog();
@@ -622,6 +625,61 @@ function bindSearch() {
 /* ════════════════════════════════════════════════
    CORRIDOR
 ════════════════════════════════════════════════ */
+/* ════════════════════════════════════════════════
+   COVERAGE MAP PAGE
+════════════════════════════════════════════════ */
+async function initCoveragePage() {
+  const wrap = document.getElementById('coverage-map-wrap');
+  if (!wrap) return;
+
+  /* Make sure companies are loaded first */
+  if (!window.ALL_COMPANIES || window.ALL_COMPANIES.length === 0) {
+    await loadCompanies();
+  }
+
+  /* If SVG already loaded just re-render colors */
+  if (document.getElementById('world-map-svg')) {
+    renderCoverage();
+    return;
+  }
+
+  /* Load SVG via XMLHttpRequest */
+  const xhr = new XMLHttpRequest();
+  xhr.open('GET', 'assets/world.svg', true);
+  xhr.onload = function() {
+    if (xhr.status === 200) {
+      wrap.innerHTML = xhr.responseText;
+      const svgEl = wrap.querySelector('svg');
+      if (svgEl) {
+        svgEl.id = 'world-map-svg';
+        svgEl.style.cssText = 'width:100%;height:auto;display:block;border-radius:var(--r2)';
+      }
+      renderCoverage();
+    } else {
+      showMapError(wrap);
+    }
+  };
+  xhr.onerror = function() { showMapError(wrap); };
+  xhr.send();
+}
+
+function showMapError(wrap) {
+  wrap.innerHTML = `
+    <div class="empty-state" style="padding:60px 20px;text-align:center">
+      <div class="empty-icon">🗺️</div>
+      <p style="font-weight:600;font-size:16px;margin-top:12px">Map file not found</p>
+      <p style="color:var(--tx3);font-size:13px;margin-top:8px">
+        Make sure <strong>assets/world.svg</strong> is in your project folder</p>
+    </div>`;
+}
+
+/* Bridge function — coverage.js calls openCountryDetail, which maps to openCountryPanel */
+function openCountryDetail(countryName, flag, partners) {
+  const ctData = window.ALL_COUNTRIES.find(c => c.name === countryName)
+    || { id: null, name: countryName, flag_emoji: flag };
+  openCountryPanel(ctData, partners);
+}
+
 function initCorridorPage() {
   const linkedCountries = [...new Map(
     window.ALL_COMPANIES.flatMap(c=>(c.countries||[])).map(co=>[co.name,co])

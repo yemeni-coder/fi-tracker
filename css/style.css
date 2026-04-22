@@ -1970,17 +1970,15 @@ tbody tr:hover { background: var(--glass); }
   --cov-empty:  #d8d8e8;
   --cov-border: #bbbbcc;
 }
-
 .coverage-map-wrap {
-  background: var(--bg2);
-  border: 1px solid var(--border);
+  background: #000000;
+  border: 6px solid #36260b62;
   border-radius: var(--r3);
-  padding: 16px;
+  padding: 1px;
   overflow: hidden;
-}
-
+} 
 .coverage-map-wrap svg {
-  border-radius: var(--r2);
+  border-radius: var(--r1);
 }
 
 .cov-legend {

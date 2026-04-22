@@ -1,7 +1,6 @@
 /* ════════════════════════════════════════════════
    js/coverage.js
-   Real SVG World Map — embedded directly in HTML
-   No fetch, no loading issues
+   World Map with Zoom/Pan + Hover Stats Panel
 ════════════════════════════════════════════════ */
 
 const COUNTRY_TO_SVG = {
@@ -39,6 +38,9 @@ const COUNTRY_TO_SVG = {
   'Djibouti':                  { type:'id',    val:'DJ' },
   'Dominica':                  { type:'id',    val:'DM' },
   'Dominican Republic':        { type:'id',    val:'DO' },
+  'DRC':                       { type:'id',    val:'CD' },
+  'Democratic Republic of Congo': { type:'id', val:'CD' },
+  'Congo (DRC)':               { type:'id',    val:'CD' },
   'Ecuador':                   { type:'id',    val:'EC' },
   'Egypt':                     { type:'id',    val:'EG' },
   'El Salvador':               { type:'id',    val:'SV' },
@@ -84,6 +86,7 @@ const COUNTRY_TO_SVG = {
   'Maldives':                  { type:'id',    val:'MV' },
   'Mali':                      { type:'id',    val:'ML' },
   'Mauritania':                { type:'id',    val:'MR' },
+  'Mauritius':                 { type:'class', val:'Mauritius' },
   'Mexico':                    { type:'id',    val:'MX' },
   'Moldova':                   { type:'id',    val:'MD' },
   'Mongolia':                  { type:'id',    val:'MN' },
@@ -116,6 +119,7 @@ const COUNTRY_TO_SVG = {
   'Slovakia':                  { type:'id',    val:'SK' },
   'Slovenia':                  { type:'id',    val:'SI' },
   'Somalia':                   { type:'id',    val:'SO' },
+  'South Africa':              { type:'id',    val:'ZA' },
   'South Korea':               { type:'id',    val:'KR' },
   'South Sudan':               { type:'id',    val:'SS' },
   'Spain':                     { type:'id',    val:'ES' },
@@ -142,7 +146,6 @@ const COUNTRY_TO_SVG = {
   'Yemen':                     { type:'id',    val:'YE' },
   'Zambia':                    { type:'id',    val:'ZM' },
   'Zimbabwe':                  { type:'id',    val:'ZW' },
-  // class-based
   'Turkey':                    { type:'class', val:'Turkey' },
   'France':                    { type:'class', val:'France' },
   'Russia':                    { type:'class', val:'Russian Federation' },
@@ -171,7 +174,6 @@ const COUNTRY_TO_SVG = {
   'Cyprus':                    { type:'class', val:'Cyprus' },
   'Fiji':                      { type:'class', val:'Fiji' },
   'Malta':                     { type:'class', val:'Malta' },
-  'Mauritius':                 { type:'class', val:'Mauritius' },
   'Oman':                      { type:'class', val:'Oman' },
   'Papua New Guinea':          { type:'class', val:'Papua New Guinea' },
   'Samoa':                     { type:'class', val:'Samoa' },
@@ -183,7 +185,7 @@ const COUNTRY_TO_SVG = {
 };
 
 /* ════════════════════════════════════════════════
-   RENDER — SVG already embedded in DOM
+   RENDER
 ════════════════════════════════════════════════ */
 function renderCoverage() {
   const cos = window.ALL_COMPANIES;
@@ -192,12 +194,13 @@ function renderCoverage() {
   const countryPartners = {};
   cos.forEach(c => {
     (c.countries || []).forEach(co => {
+      if (!co.name) return;
       if (!countryPartners[co.name]) countryPartners[co.name] = [];
       if (!countryPartners[co.name].find(p => p.id === c.id)) {
         countryPartners[co.name].push({
           id: c.id, name: c.name,
-          status: c.partnership_status||c.relationship_status||'Pipeline',
-          type:   c.company_type
+          status: c.partnership_status || c.relationship_status || 'Pipeline',
+          type: c.company_type
         });
       }
     });
@@ -208,7 +211,7 @@ function renderCoverage() {
   const uncovered = total - covered;
   const pct       = Math.round(covered / total * 100);
 
-  /* ── Stats ── */
+  /* ── Stats above map ── */
   document.getElementById('coverage-stats').innerHTML = `
     <div class="stat-card">
       <div class="stat-label">Countries Covered</div>
@@ -231,65 +234,49 @@ function renderCoverage() {
       <div class="stat-sub">in the system</div>
     </div>`;
 
-  /* ── Get SVG (already in DOM) ── */
   const svgEl = document.getElementById('world-map-svg');
-  if (!svgEl) {
-    console.error('world-map-svg not found in DOM');
-    return;
+  if (!svgEl) { console.error('world-map-svg not found'); return; }
+
+  /* ── Ocean background ── */
+  svgEl.style.backgroundColor = '#86cbe2';
+  svgEl.style.cssText = (svgEl.style.cssText || '') + ';background:#86cbe2;';
+
+  /* ── Helper: get country name from path ── */
+  function getCountryName(path) {
+    const id  = path.getAttribute('id');
+    const cls = path.getAttribute('class');
+    const nm  = path.getAttribute('name');
+    for (const [country, info] of Object.entries(COUNTRY_TO_SVG)) {
+      if (info.type === 'id'    && info.val === id)  return country;
+      if (info.type === 'class' && info.val === cls) return country;
+      if (info.type === 'name'  && info.val === nm)  return country;
+    }
+    return null;
   }
 
-  /* ── Reset all paths to base style ── */
-  svgEl.querySelectorAll('path').forEach(p => {
-    p.style.fill        = '';
-    p.style.stroke      = '';
-    p.style.strokeWidth = '';
-    p.style.cursor      = 'default';
-    p.style.transition  = 'fill 0.15s ease';
-  });
+  /* ── Color countries ── */
+  svgEl.querySelectorAll('path').forEach(path => {
+    const countryName = getCountryName(path);
+    if (!countryName) { path.style.fill = '#8b8c89'; return; }
 
-  /* ── Color covered countries ── */
-  let coloredCount = 0;
-
-  Object.entries(countryPartners).forEach(([countryName, partners]) => {
-    const svgInfo = COUNTRY_TO_SVG[countryName];
-    if (!svgInfo) return;
-
-    let elements = [];
-
-    if (svgInfo.type === 'id') {
-      const el = document.getElementById(svgInfo.val);
-      if (el) elements = [el];
-    } else if (svgInfo.type === 'class') {
-      // Match by class attribute value exactly
-      elements = [...svgEl.querySelectorAll('path')].filter(el =>
-        el.getAttribute('class') === svgInfo.val
-      );
-    } else if (svgInfo.type === 'name') {
-      elements = [...svgEl.querySelectorAll('path')].filter(el =>
-        el.getAttribute('name') === svgInfo.val
-      );
+    if (countryName === 'Turkey') {
+      path.style.fill = '#e63946';
+      path.style.cursor = 'pointer';
+      path.addEventListener('mouseenter', e => showMapTooltip(e, '🇹🇷 TURKEY — Payporter HQ', []));
+      path.addEventListener('mousemove',  e => moveMapTooltip(e));
+      path.addEventListener('mouseleave', hideMapTooltip);
+      return;
     }
 
-    if (!elements.length) return;
-    coloredCount++;
-
-    const count     = partners.length;
-    const intensity = count === 1 ? 0.5 : count === 2 ? 0.65 : count <= 4 ? 0.8 : 0.95;
-    const hasActive = partners.some(p =>
-      p.status==='Active' || ['Sending & Receiving','Sending Only','Receiving Only'].includes(p.status)
-    );
-    const color = hasActive
-      ? `rgba(79,110,247,${intensity})`
-      : `rgba(240,168,50,${intensity})`;
-
-    elements.forEach(el => {
-      el.style.fill   = color;
-      el.style.cursor = 'pointer';
-      el.addEventListener('mouseenter', e => showMapTooltip(e, countryName, partners));
-      el.addEventListener('mousemove',  e => moveMapTooltip(e));
-      el.addEventListener('mouseleave', hideMapTooltip);
-      el.addEventListener('click', () => {
-        const flag = window.ALL_COUNTRIES.find(c => c.name === countryName)?.flag_emoji || '🌍';
+    const partners = countryPartners[countryName];
+    if (partners && partners.length > 0) {
+      path.style.fill   = '#f4a261';
+      path.style.cursor = 'pointer';
+      path.addEventListener('mouseenter', e => showMapTooltip(e, countryName, partners));
+      path.addEventListener('mousemove',  e => moveMapTooltip(e));
+      path.addEventListener('mouseleave', hideMapTooltip);
+      path.addEventListener('click', () => {
+        const flag = (window.ALL_COUNTRIES||[]).find(c => c.name === countryName)?.flag_emoji || '🌍';
         const fullPartners = partners.map(p => {
           const full = window.ALL_COMPANIES.find(c => c.id === p.id);
           const co   = full?.countries?.find(x => x.name === countryName);
@@ -297,57 +284,241 @@ function renderCoverage() {
         });
         openCountryDetail(countryName, flag, fullPartners);
       });
-    });
+    } else {
+      path.style.fill   = '#8b8c89';
+      path.style.cursor = 'default';
+      path.addEventListener('mouseenter', e => showMapTooltip(e, countryName, []));
+      path.addEventListener('mousemove',  e => moveMapTooltip(e));
+      path.addEventListener('mouseleave', hideMapTooltip);
+    }
   });
 
-  /* ── Highlight Turkey (Payporter home) ── */
-  const turkeyEls = [...svgEl.querySelectorAll('path')].filter(el =>
-    el.getAttribute('class') === 'Turkey'
-  );
-  turkeyEls.forEach(el => {
-    el.style.fill        = 'rgba(240,82,82,0.75)';
-    el.style.strokeWidth = '0.6';
-    el.style.cursor      = 'pointer';
-    el.addEventListener('mouseenter', e =>
-      showMapTooltip(e, '🇹🇷 Turkey — Payporter', [])
-    );
-    el.addEventListener('mousemove',  e => moveMapTooltip(e));
-    el.addEventListener('mouseleave', hideMapTooltip);
+  /* ── Pins ── */
+  svgEl.querySelectorAll('.map-pin-group').forEach(p => p.remove());
+
+  function placePinCentered(el, pinFill, pinStroke, isPartner, partners, countryName) {
+    try {
+      const bbox = el.getBBox();
+      if (bbox.width < 2 || bbox.height < 2) return;
+      const cx = bbox.x + bbox.width  / 2;
+      const cy = bbox.y + bbox.height / 2;
+      const g  = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      g.setAttribute('class', 'map-pin-group');
+      g.style.cursor = isPartner ? 'pointer' : 'default';
+
+      const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      circle.setAttribute('cx', cx); circle.setAttribute('cy', cy);
+      circle.setAttribute('r', isPartner ? 10 : 5);
+      circle.setAttribute('fill', pinFill); circle.setAttribute('stroke', pinStroke);
+      circle.setAttribute('stroke-width', '1.5');
+      circle.style.filter = 'drop-shadow(0 1px 3px rgba(0,0,0,0.4))';
+      g.appendChild(circle);
+
+      if (isPartner && partners) {
+        const num = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        num.setAttribute('x', cx); num.setAttribute('y', cy + 0.5);
+        num.setAttribute('text-anchor', 'middle'); num.setAttribute('dominant-baseline', 'middle');
+        num.setAttribute('fill', '#0c0000'); num.setAttribute('font-size', '10');
+        num.setAttribute('font-weight', 'bold'); num.setAttribute('font-family', 'Arial, sans-serif');
+        num.style.pointerEvents = 'none';
+        num.textContent = partners.length;
+        g.appendChild(num);
+        g.addEventListener('mouseenter', e => showMapTooltip(e, countryName, partners));
+        g.addEventListener('mousemove',  e => moveMapTooltip(e));
+        g.addEventListener('mouseleave', hideMapTooltip);
+        g.addEventListener('click', () => {
+          const flag = (window.ALL_COUNTRIES||[]).find(c => c.name === countryName)?.flag_emoji || '🌍';
+          const fullPartners = partners.map(p => {
+            const full = window.ALL_COMPANIES.find(c => c.id === p.id);
+            const co   = full?.countries?.find(x => x.name === countryName);
+            return { ...full, direction: co?.direction, transactions: co?.transactions || [] };
+          });
+          openCountryDetail(countryName, flag, fullPartners);
+        });
+      }
+      svgEl.appendChild(g);
+    } catch(e) {}
+  }
+
+  Object.entries(countryPartners).forEach(([name, partners]) => {
+    const svgInfo = COUNTRY_TO_SVG[name]; if (!svgInfo) return;
+    let el = null;
+    if (svgInfo.type === 'id')    el = document.getElementById(svgInfo.val);
+    else if (svgInfo.type === 'class') el = [...svgEl.querySelectorAll('path')].find(e => e.getAttribute('class') === svgInfo.val);
+    else if (svgInfo.type === 'name')  el = [...svgEl.querySelectorAll('path')].find(e => e.getAttribute('name') === svgInfo.val);
+    if (el) placePinCentered(el, '#f4a261', '#ffffff', true, partners, name);
   });
 
-  console.log(`Coverage: colored ${coloredCount}/${Object.keys(countryPartners).length} countries`);
-  console.log('Countries in DB with partners:', Object.keys(countryPartners));
-  console.log('Sample - first country partners:', Object.entries(countryPartners)[0]);
-  
-  // Show which countries had no SVG match
-  const unmatched = Object.keys(countryPartners).filter(name => !COUNTRY_TO_SVG[name]);
-  if (unmatched.length > 0) {
-    console.warn('Countries with no SVG mapping:', unmatched);
+  /* Turkey star pin */
+  const tkEl = [...svgEl.querySelectorAll('path')].find(e => e.getAttribute('class') === 'Turkey');
+  if (tkEl) {
+    try {
+      const bbox = tkEl.getBBox();
+      const cx = bbox.x + bbox.width/2, cy = bbox.y + bbox.height/2;
+      const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      g.setAttribute('class','map-pin-group'); g.style.cursor='pointer';
+      const c = document.createElementNS('http://www.w3.org/2000/svg','circle');
+      c.setAttribute('cx',cx); c.setAttribute('cy',cy); c.setAttribute('r','12');
+      c.setAttribute('fill','#e63946'); c.setAttribute('stroke','#ffffff'); c.setAttribute('stroke-width','2');
+      c.style.filter='drop-shadow(0 1px 4px rgba(0,0,0,0.5))'; g.appendChild(c);
+      const t = document.createElementNS('http://www.w3.org/2000/svg','text');
+      t.setAttribute('x',cx); t.setAttribute('y',cy+1);
+      t.setAttribute('text-anchor','middle'); t.setAttribute('dominant-baseline','middle');
+      t.setAttribute('fill','#ffffff'); t.setAttribute('font-size','12'); t.setAttribute('font-weight','bold');
+      t.style.pointerEvents='none'; t.textContent='★'; g.appendChild(t);
+      g.addEventListener('mouseenter', e => showMapTooltip(e, '🇹🇷 TURKEY — Payporter HQ', []));
+      g.addEventListener('mousemove',  e => moveMapTooltip(e));
+      g.addEventListener('mouseleave', hideMapTooltip);
+      svgEl.appendChild(g);
+    } catch(e) {}
   }
 
   /* ── Legend ── */
   document.getElementById('coverage-legend').innerHTML = `
     <div class="cov-legend">
-      <div class="cov-legend-item">
-        <div class="cov-legend-dot" style="background:rgba(79,110,247,0.85)"></div>
-        <span>Active partners</span>
-      </div>
-      <div class="cov-legend-item">
-        <div class="cov-legend-dot" style="background:rgba(240,168,50,0.85)"></div>
-        <span>Pipeline / In progress</span>
-      </div>
-      <div class="cov-legend-item">
-        <div class="cov-legend-dot" style="background:rgba(240,82,82,0.75)"></div>
-        <span>🇹🇷 Payporter — Turkey</span>
-      </div>
-      <div class="cov-legend-item">
-        <div class="cov-legend-dot" style="background:var(--cov-empty);border:1px solid var(--cov-border)"></div>
-        <span>No coverage</span>
-      </div>
-      <div style="font-size:11px;color:var(--tx3);margin-left:auto">
-        Darker = more partners · Click any country for details
-      </div>
+      <div class="cov-legend-item"><div class="cov-legend-dot" style="background:#86cbe2"></div><span>Ocean</span></div>
+      <div class="cov-legend-item"><div class="cov-legend-dot" style="background:#f4a261"></div><span>Countries with Partners</span></div>
+      <div class="cov-legend-item"><div class="cov-legend-dot" style="background:#8b8c89"></div><span>No Partners</span></div>
+      <div class="cov-legend-item"><div class="cov-legend-dot" style="background:#e63946"></div><span>🇹🇷 Payporter HQ</span></div>
     </div>`;
+
+  /* ── Init zoom/pan + hover panel ── */
+  initMapZoomPan(svgEl, covered, total, uncovered, pct, cos.length);
+}
+
+/* ════════════════════════════════════════════════
+   ZOOM / PAN + HOVER STATS PANEL
+════════════════════════════════════════════════ */
+function initMapZoomPan(svgEl, covered, total, uncovered, pct, totalPartners) {
+  const wrap = document.getElementById('coverage-map-wrap');
+  if (!wrap || wrap.dataset.zoomInit) return;
+  wrap.dataset.zoomInit = '1';
+
+  /* ── Wrap SVG contents in a <g> for transform ── */
+  let zoomG = svgEl.querySelector('g.zoom-layer');
+  if (!zoomG) {
+    zoomG = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    zoomG.setAttribute('class', 'zoom-layer');
+    while (svgEl.firstChild) zoomG.appendChild(svgEl.firstChild);
+    svgEl.appendChild(zoomG);
+  }
+
+  let scale = 1, tx = 0, ty = 0;
+  let isDragging = false, startX = 0, startY = 0, startTx = 0, startTy = 0;
+  const MIN_SCALE = 1, MAX_SCALE = 8;
+
+  function applyTransform() {
+    zoomG.setAttribute('transform', `translate(${tx},${ty}) scale(${scale})`);
+  }
+
+  /* Scroll to zoom */
+  svgEl.addEventListener('wheel', e => {
+    e.preventDefault();
+    const rect   = svgEl.getBoundingClientRect();
+    const mouseX = (e.clientX - rect.left) / rect.width  * 2000;
+    const mouseY = (e.clientY - rect.top)  / rect.height * 857;
+    const delta  = e.deltaY < 0 ? 1.15 : 0.87;
+    const newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale * delta));
+    tx = mouseX - (mouseX - tx) * (newScale / scale);
+    ty = mouseY - (mouseY - ty) * (newScale / scale);
+    scale = newScale;
+    if (scale <= MIN_SCALE) { scale = MIN_SCALE; tx = 0; ty = 0; }
+    applyTransform();
+  }, { passive: false });
+
+  /* Drag to pan */
+  svgEl.addEventListener('mousedown', e => {
+    if (scale <= 1) return;
+    isDragging = true;
+    startX = e.clientX; startY = e.clientY;
+    startTx = tx; startTy = ty;
+    svgEl.style.cursor = 'grabbing';
+  });
+  window.addEventListener('mousemove', e => {
+    if (!isDragging) return;
+    const rect   = svgEl.getBoundingClientRect();
+    const scaleX = 2000 / rect.width;
+    const scaleY = 857  / rect.height;
+    tx = startTx + (e.clientX - startX) * scaleX;
+    ty = startTy + (e.clientY - startY) * scaleY;
+    applyTransform();
+  });
+  window.addEventListener('mouseup', () => {
+    isDragging = false;
+    svgEl.style.cursor = scale > 1 ? 'grab' : 'default';
+  });
+
+  /* Double-click to zoom in */
+  svgEl.addEventListener('dblclick', e => {
+    const rect   = svgEl.getBoundingClientRect();
+    const mouseX = (e.clientX - rect.left) / rect.width  * 2000;
+    const mouseY = (e.clientY - rect.top)  / rect.height * 857;
+    const newScale = Math.min(MAX_SCALE, scale * 2);
+    tx = mouseX - (mouseX - tx) * (newScale / scale);
+    ty = mouseY - (mouseY - ty) * (newScale / scale);
+    scale = newScale;
+    applyTransform();
+    svgEl.style.cursor = 'grab';
+  });
+
+  /* Reset button */
+  const resetBtn = document.createElement('button');
+  resetBtn.textContent = '⟳ Reset';
+  resetBtn.style.cssText = 'position:absolute;top:12px;right:12px;z-index:10;background:var(--bg);border:1px solid var(--border);border-radius:var(--r2);padding:5px 12px;font-size:11px;font-weight:600;color:var(--tx2);cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,0.15)';
+  resetBtn.addEventListener('click', () => {
+    scale = 1; tx = 0; ty = 0;
+    applyTransform();
+    svgEl.style.cursor = 'default';
+  });
+  wrap.style.position = 'relative';
+  wrap.appendChild(resetBtn);
+
+  /* ── Hover stats panel ── */
+  const panel = document.createElement('div');
+  panel.id = 'map-stats-panel';
+panel.style.cssText = `
+  position:absolute;
+  bottom:16px;
+  left:16px;
+  width:170px;
+  background:var(--bg);
+  border:1px solid var(--border);
+  border-radius:var(--r2);
+  padding:14px;
+  box-shadow:0 4px 16px rgba(0,0,0,0.15);
+  z-index:10;
+  opacity:0;
+  pointer-events:none;
+  transition:opacity 0.2s ease;
+  font-family:'Syne',sans-serif;
+`;
+  panel.innerHTML = `
+    <div style="font-size:10px;font-weight:700;color:var(--tx3);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:12px">Coverage Stats</div>
+    <div style="margin-bottom:10px">
+      <div style="font-size:11px;color:var(--tx2);margin-bottom:2px">Countries with Partners</div>
+      <div style="font-size:22px;font-weight:800;color:var(--ok)">${covered}</div>
+      <div style="font-size:10px;color:var(--tx3)">active markets</div>
+    </div>
+    <div style="margin-bottom:10px">
+      <div style="font-size:11px;color:var(--tx2);margin-bottom:2px">Countries with No Partners</div>
+      <div style="font-size:22px;font-weight:800;color:var(--tx3)">${uncovered}</div>
+      <div style="font-size:10px;color:var(--tx3)">opportunity markets</div>
+    </div>
+    <div style="margin-bottom:10px">
+      <div style="font-size:11px;color:var(--tx2);margin-bottom:2px">Coverage Rate</div>
+      <div style="font-size:22px;font-weight:800;color:var(--accent)">${pct}%</div>
+      <div style="font-size:10px;color:var(--tx3)">of directory</div>
+    </div>
+    <div>
+      <div style="font-size:11px;color:var(--tx2);margin-bottom:2px">Total Partners</div>
+      <div style="font-size:22px;font-weight:800;color:var(--tx)">${totalPartners}</div>
+      <div style="font-size:10px;color:var(--tx3)">in the system</div>
+    </div>`;
+  wrap.appendChild(panel);
+
+  /* Show panel on hover over map wrap */
+  wrap.addEventListener('mouseenter', () => { panel.style.opacity = '1'; });
+  wrap.addEventListener('mouseleave', () => { panel.style.opacity = '0'; });
 }
 
 /* ════════════════════════════════════════════════
@@ -361,20 +532,25 @@ function showMapTooltip(e, countryName, partners) {
     tip.className = 'map-tooltip';
     document.body.appendChild(tip);
   }
-
   const activeCount = partners.filter(p =>
-    p.status==='Active' || ['Sending & Receiving','Sending Only','Receiving Only'].includes(p.status)
+    p.status==='Active'||['Sending & Receiving','Sending Only','Receiving Only'].includes(p.status)
   ).length;
 
-  tip.innerHTML = `
-    <div class="map-tip-name">${countryName}</div>
-    ${partners.length > 0 ? `
-      <div class="map-tip-count">${partners.length} partner${partners.length !== 1 ? 's' : ''}</div>
-      ${activeCount > 0 ? `<div class="map-tip-active">● ${activeCount} active</div>` : ''}
-      <div class="map-tip-names">${partners.slice(0,4).map(p=>p.name).join(', ')}${partners.length>4?` +${partners.length-4} more`:''}</div>
-      <div class="map-tip-hint">Click to view details</div>
-    ` : '<div style="font-size:11px;color:var(--tx3)">Payporter HQ</div>'}`;
-
+  if (countryName.includes('TURKEY')) {
+    tip.innerHTML = `<div class="map-tip-name">🇹🇷 Turkey</div><div class="map-tip-count">Payporter Headquarters</div>`;
+  } else if (partners.length > 0) {
+    tip.innerHTML = `
+      <div class="map-tip-name">${countryName}</div>
+      <div class="map-tip-count">📊 ${partners.length} partner${partners.length!==1?'s':''}</div>
+      ${activeCount>0?`<div class="map-tip-active">✅ ${activeCount} active</div>`:''}
+      <div class="map-tip-names">🏢 ${partners.slice(0,4).map(p=>p.name).join(', ')}${partners.length>4?` +${partners.length-4} more`:''}</div>
+      <div class="map-tip-hint">🔍 Click to view details</div>`;
+  } else {
+    tip.innerHTML = `
+      <div class="map-tip-name">${countryName}</div>
+      <div class="map-tip-count">📭 No partners yet</div>
+      <div class="map-tip-hint">✨ Opportunity market</div>`;
+  }
   tip.style.display = 'block';
   moveMapTooltip(e);
 }
@@ -382,10 +558,8 @@ function showMapTooltip(e, countryName, partners) {
 function moveMapTooltip(e) {
   const tip = document.getElementById('map-tooltip');
   if (!tip) return;
-  const x    = e.clientX + 14;
-  const y    = e.clientY - 10;
-  const tipW = tip.offsetWidth;
-  const winW = window.innerWidth;
+  const x = e.clientX + 14, y = e.clientY - 10;
+  const tipW = tip.offsetWidth, winW = window.innerWidth;
   tip.style.left = (x + tipW > winW ? x - tipW - 28 : x) + 'px';
   tip.style.top  = y + 'px';
 }
