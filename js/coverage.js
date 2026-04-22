@@ -183,7 +183,6 @@ const COUNTRY_TO_SVG = {
   'Vanuatu':                   { type:'class', val:'Vanuatu' },
   'St. Kitts and Nevis':       { type:'class', val:'Saint Kitts and Nevis' },
 };
-
 /* ════════════════════════════════════════════════
    RENDER
 ════════════════════════════════════════════════ */
@@ -239,7 +238,16 @@ function renderCoverage() {
 
   /* ── Ocean background ── */
   svgEl.style.backgroundColor = '#86cbe2';
-  svgEl.style.cssText = (svgEl.style.cssText || '') + ';background:#86cbe2;';
+
+  /* ── CREATE ZOOM LAYER FIRST before anything else ── */
+  /* This ensures pins get placed inside it so they move with the map on zoom */
+  if (!svgEl.querySelector('g.zoom-layer')) {
+    const zoomG = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    zoomG.setAttribute('class', 'zoom-layer');
+    while (svgEl.firstChild) zoomG.appendChild(svgEl.firstChild);
+    svgEl.appendChild(zoomG);
+  }
+  const zoomLayer = svgEl.querySelector('g.zoom-layer');
 
   /* ── Helper: get country name from path ── */
   function getCountryName(path) {
@@ -255,7 +263,7 @@ function renderCoverage() {
   }
 
   /* ── Color countries ── */
-  svgEl.querySelectorAll('path').forEach(path => {
+  zoomLayer.querySelectorAll('path').forEach(path => {
     const countryName = getCountryName(path);
     if (!countryName) { path.style.fill = '#8b8c89'; return; }
 
@@ -293,9 +301,10 @@ function renderCoverage() {
     }
   });
 
-  /* ── Pins ── */
-  svgEl.querySelectorAll('.map-pin-group').forEach(p => p.remove());
+  /* ── Remove old pins ── */
+  zoomLayer.querySelectorAll('.map-pin-group').forEach(p => p.remove());
 
+  /* ── Place pin — appended to zoomLayer so it moves with map on zoom ── */
   function placePinCentered(el, pinFill, pinStroke, isPartner, partners, countryName) {
     try {
       const bbox = el.getBBox();
@@ -336,21 +345,23 @@ function renderCoverage() {
           openCountryDetail(countryName, flag, fullPartners);
         });
       }
-      svgEl.appendChild(g);
+      /* ✅ CRITICAL FIX: append to zoomLayer not svgEl */
+      zoomLayer.appendChild(g);
     } catch(e) {}
   }
 
+  /* ── Orange pins for partner countries ── */
   Object.entries(countryPartners).forEach(([name, partners]) => {
     const svgInfo = COUNTRY_TO_SVG[name]; if (!svgInfo) return;
     let el = null;
-    if (svgInfo.type === 'id')    el = document.getElementById(svgInfo.val);
-    else if (svgInfo.type === 'class') el = [...svgEl.querySelectorAll('path')].find(e => e.getAttribute('class') === svgInfo.val);
-    else if (svgInfo.type === 'name')  el = [...svgEl.querySelectorAll('path')].find(e => e.getAttribute('name') === svgInfo.val);
+    if (svgInfo.type === 'id')    el = zoomLayer.querySelector('#' + svgInfo.val) || document.getElementById(svgInfo.val);
+    else if (svgInfo.type === 'class') el = [...zoomLayer.querySelectorAll('path')].find(e => e.getAttribute('class') === svgInfo.val);
+    else if (svgInfo.type === 'name')  el = [...zoomLayer.querySelectorAll('path')].find(e => e.getAttribute('name') === svgInfo.val);
     if (el) placePinCentered(el, '#f4a261', '#ffffff', true, partners, name);
   });
 
-  /* Turkey star pin */
-  const tkEl = [...svgEl.querySelectorAll('path')].find(e => e.getAttribute('class') === 'Turkey');
+  /* ── Turkey star pin — also inside zoomLayer ── */
+  const tkEl = [...zoomLayer.querySelectorAll('path')].find(e => e.getAttribute('class') === 'Turkey');
   if (tkEl) {
     try {
       const bbox = tkEl.getBBox();
@@ -369,7 +380,8 @@ function renderCoverage() {
       g.addEventListener('mouseenter', e => showMapTooltip(e, '🇹🇷 TURKEY — Payporter HQ', []));
       g.addEventListener('mousemove',  e => moveMapTooltip(e));
       g.addEventListener('mouseleave', hideMapTooltip);
-      svgEl.appendChild(g);
+      /* ✅ CRITICAL FIX: append to zoomLayer */
+      zoomLayer.appendChild(g);
     } catch(e) {}
   }
 
@@ -394,14 +406,8 @@ function initMapZoomPan(svgEl, covered, total, uncovered, pct, totalPartners) {
   if (!wrap || wrap.dataset.zoomInit) return;
   wrap.dataset.zoomInit = '1';
 
-  /* ── Wrap SVG contents in a <g> for transform ── */
-  let zoomG = svgEl.querySelector('g.zoom-layer');
-  if (!zoomG) {
-    zoomG = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-    zoomG.setAttribute('class', 'zoom-layer');
-    while (svgEl.firstChild) zoomG.appendChild(svgEl.firstChild);
-    svgEl.appendChild(zoomG);
-  }
+  /* zoomLayer already created in renderCoverage */
+  const zoomG = svgEl.querySelector('g.zoom-layer');
 
   let scale = 1, tx = 0, ty = 0;
   let isDragging = false, startX = 0, startY = 0, startTx = 0, startTy = 0;
@@ -476,22 +482,22 @@ function initMapZoomPan(svgEl, covered, total, uncovered, pct, totalPartners) {
   /* ── Hover stats panel ── */
   const panel = document.createElement('div');
   panel.id = 'map-stats-panel';
-panel.style.cssText = `
-  position:absolute;
-  bottom:16px;
-  left:16px;
-  width:170px;
-  background:var(--bg);
-  border:1px solid var(--border);
-  border-radius:var(--r2);
-  padding:14px;
-  box-shadow:0 4px 16px rgba(0,0,0,0.15);
-  z-index:10;
-  opacity:0;
-  pointer-events:none;
-  transition:opacity 0.2s ease;
-  font-family:'Syne',sans-serif;
-`;
+  panel.style.cssText = `
+    position:absolute;
+    bottom:16px;
+    left:16px;
+    width:170px;
+    background:var(--bg);
+    border:1px solid var(--border);
+    border-radius:var(--r2);
+    padding:14px;
+    box-shadow:0 4px 16px rgba(0,0,0,0.15);
+    z-index:10;
+    opacity:0;
+    pointer-events:none;
+    transition:opacity 0.2s ease;
+    font-family:'Syne',sans-serif;
+  `;
   panel.innerHTML = `
     <div style="font-size:10px;font-weight:700;color:var(--tx3);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:12px">Coverage Stats</div>
     <div style="margin-bottom:10px">
@@ -516,7 +522,6 @@ panel.style.cssText = `
     </div>`;
   wrap.appendChild(panel);
 
-  /* Show panel on hover over map wrap */
   wrap.addEventListener('mouseenter', () => { panel.style.opacity = '1'; });
   wrap.addEventListener('mouseleave', () => { panel.style.opacity = '0'; });
 }
