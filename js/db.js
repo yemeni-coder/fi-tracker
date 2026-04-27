@@ -87,7 +87,8 @@ async function dbGetCompanies() {
             limitMin:      p.limit_min     ?? null,
             limitMax:      p.limit_max     ?? null,
             limitCurrency: p.limit_currency || null,
-            limitPeriod:   p.limit_period   || null
+            limitPeriod:   p.limit_period   || null,
+            fxFee:         p.fx_fee         ?? null
           }))
       }))
   }));
@@ -164,7 +165,8 @@ async function dbSaveCountryLinks(companyId, links) {
       limit_min:      (t.limitMin  !== '' && t.limitMin  != null) ? parseFloat(t.limitMin)  : null,
       limit_max:      (t.limitMax  !== '' && t.limitMax  != null) ? parseFloat(t.limitMax)  : null,
       limit_currency: t.limitCurrency || null,
-      limit_period:   t.limitPeriod   || null
+      limit_period:   t.limitPeriod   || null,
+      fx_fee:         (t.fxFee !== '' && t.fxFee != null) ? parseFloat(t.fxFee) : null
     }));
     if (txRows.length > 0) await sbFetch('company_country_transactions', { method: 'POST', body: JSON.stringify(txRows) });
   }
@@ -183,7 +185,8 @@ async function dbAddCompanyToCountry(companyId, countryId, direction, transactio
     limit_min:      (t.limitMin  !== '' && t.limitMin  != null) ? parseFloat(t.limitMin)  : null,
     limit_max:      (t.limitMax  !== '' && t.limitMax  != null) ? parseFloat(t.limitMax)  : null,
     limit_currency: t.limitCurrency || null,
-    limit_period:   t.limitPeriod   || null
+    limit_period:   t.limitPeriod   || null,
+    fx_fee:         (t.fxFee !== '' && t.fxFee != null) ? parseFloat(t.fxFee) : null
   }));
   if (txRows.length > 0) await sbFetch('company_country_transactions', { method: 'POST', body: JSON.stringify(txRows) });
   return ccRow;

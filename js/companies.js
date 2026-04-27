@@ -224,7 +224,9 @@ function buildTransactionRows(transactions) {
   return `<div class="tx-pairs-display">
     ${transactions.map(tx=>{
       const hasLimit = tx.limitMin != null || tx.limitMax != null;
+      const hasFxFee  = tx.fxFee != null;
       const periodLabel = LIMIT_PERIOD_LABELS[tx.limitPeriod] || tx.limitPeriod || '';
+      let fxFeeHtml = hasFxFee ? `<div class="tx-limit-badge" style="background:var(--ac-soft);color:var(--accent);border-color:var(--accent)55">💱 FX Fee: <strong>${tx.fxFee}%</strong></div>` : '';
       let limitHtml = '';
       if (hasLimit) {
         const parts = [];
@@ -243,6 +245,7 @@ function buildTransactionRows(transactions) {
             <div class="tx-pair-curs">${(tx.currencies||[]).map(cu=>makeTag(cu,'t-cur')).join('')}</div>
             <div class="tx-pair-segs">${(tx.segments||[]).map(s=>makeTag(s,'t-seg')).join('')}</div>
             ${limitHtml}
+            ${fxFeeHtml}
           </div>
         </div>`;
     }).join('')}
@@ -561,14 +564,15 @@ async function exportCompanyPDF(c) {
   }
 
   function limitBadge(tx) {
-    if (tx.limitMin == null && tx.limitMax == null) return '';
+    if (tx.limitMin == null && tx.limitMax == null && tx.fxFee == null) return '';
     const parts = [];
     if (tx.limitMin != null) parts.push('Min: ' + tx.limitMin.toLocaleString());
     if (tx.limitMax != null) parts.push('Max: ' + tx.limitMax.toLocaleString());
     const cur = tx.limitCurrency || '';
     const per = LIMIT_PERIOD_LABELS[tx.limitPeriod] || tx.limitPeriod || '';
+    const fxStr = tx.fxFee != null ? (parts.length ? ' · ' : '') + 'FX ' + tx.fxFee + '%' : '';
     return '<div style="font-size:10px;color:#e65100;margin-top:3px;padding:2px 8px;background:#fff3e0;border-radius:4px;display:inline-block">' +
-      '⚠️ Limit: ' + parts.join(' · ') + (cur?' '+cur:'') + (per?' '+per:'') +
+      '⚠️ ' + (parts.length ? 'Limit: ' + parts.join(' · ') + (cur?' '+cur:'') + (per?' '+per:'') : '') + fxStr +
       '</div>';
   }
 

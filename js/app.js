@@ -632,9 +632,35 @@ async function initCoveragePage() {
   const wrap = document.getElementById('coverage-map-wrap');
   if (!wrap) return;
 
-  /* Make sure companies are loaded first */
+  /* Make sure companies are loaded first — use dbGetCompanies directly
+     to avoid triggering the companies page loading UI (spinners/grids) */
   if (!window.ALL_COMPANIES || window.ALL_COMPANIES.length === 0) {
-    await loadCompanies();
+    try { window.ALL_COMPANIES = await dbGetCompanies(); } catch(e) {}
+  }
+  if (!window.ALL_COUNTRIES || window.ALL_COUNTRIES.length === 0) {
+    try { window.ALL_COUNTRIES = await dbGetAllCountries(); } catch(e) {}
+  }
+
+  /* Add export buttons to page header if not already there */
+  if (!document.getElementById('coverage-export-btns')) {
+    const pageHead = document.querySelector('#page-coverage .page-head');
+    if (pageHead) {
+      const btnWrap = document.createElement('div');
+      btnWrap.id = 'coverage-export-btns';
+      btnWrap.style.cssText = 'display:flex;gap:8px;align-items:center';
+      btnWrap.innerHTML = `
+        <button class="btn btn-ghost" id="cov-pdf-btn" style="font-size:12px;gap:6px">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          Export PDF
+        </button>
+        <button class="btn btn-ghost" id="cov-excel-btn" style="font-size:12px;gap:6px">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
+          Export Excel
+        </button>`;
+      pageHead.appendChild(btnWrap);
+      document.getElementById('cov-pdf-btn').addEventListener('click', exportCoveragePDF);
+      document.getElementById('cov-excel-btn').addEventListener('click', exportCoverageExcel);
+    }
   }
 
   /* If SVG already loaded just re-render colors */
@@ -1036,7 +1062,8 @@ function openEditModal(id) {
     transactions:(co.transactions||[]).map(t=>({
       txType:t.txType,currencies:t.currencies||[],segments:t.segments||[],
       limitMin:t.limitMin??'',limitMax:t.limitMax??'',
-      limitCurrency:t.limitCurrency||'',limitPeriod:t.limitPeriod||''
+      limitCurrency:t.limitCurrency||'',limitPeriod:t.limitPeriod||'',
+      fxFee:t.fxFee??''
     }))
   }));
   renderCountryLinks();
@@ -1054,7 +1081,7 @@ function addCountryRow() {
   setTimeout(()=>{document.getElementById('country-links-list').scrollTop=99999;},50);
 }
 function removeCountryRow(ci){window.COUNTRY_LINKS.splice(ci,1);renderCountryLinks();}
-function addTxRow(ci){syncCountryRow(ci);window.COUNTRY_LINKS[ci].transactions.push({txType:'',currencies:[],segments:[],limitMin:'',limitMax:'',limitCurrency:'',limitPeriod:''});renderCountryLinks();}
+function addTxRow(ci){syncCountryRow(ci);window.COUNTRY_LINKS[ci].transactions.push({txType:'',currencies:[],segments:[],limitMin:'',limitMax:'',limitCurrency:'',limitPeriod:'',fxFee:''});renderCountryLinks();}
 function removeTxRow(ci,ti){syncCountryRow(ci);window.COUNTRY_LINKS[ci].transactions.splice(ti,1);renderCountryLinks();}
 
 function syncCountryRow(ci) {
@@ -1076,6 +1103,7 @@ function syncCountryRow(ci) {
       window.COUNTRY_LINKS[ci].transactions[ti].limitMax      = txRow.querySelector('.tx-limit-max')?.value ?? '';
       window.COUNTRY_LINKS[ci].transactions[ti].limitCurrency = txRow.querySelector('.tx-limit-cur')?.value || '';
       window.COUNTRY_LINKS[ci].transactions[ti].limitPeriod   = txRow.querySelector('.tx-limit-per')?.value || '';
+      window.COUNTRY_LINKS[ci].transactions[ti].fxFee         = txRow.querySelector('.tx-fx-fee')?.value ?? '';
     }
   });
 }
@@ -1143,6 +1171,14 @@ function renderCountryLinks() {
                       <option value="per_year"        ${tx.limitPeriod==='per_year'?'selected':''}>Per Year</option>
                     </select>
                   </div>
+                </div>
+                <div class="tx-sub-label" style="margin-top:12px">FX Fee <span style="font-size:10px;color:var(--tx3);font-weight:400;text-transform:none;letter-spacing:0">(optional — exchange rate markup %)</span></div>
+                <div style="display:grid;grid-template-columns:140px 1fr;gap:6px;align-items:center">
+                  <div style="position:relative">
+                    <input class="form-input tx-fx-fee" type="number" step="0.01" min="0" max="100" onchange="syncCountryRow(${ci})" value="${tx.fxFee??''}" placeholder="e.g. 1.5" style="height:34px;font-size:12px;padding-right:28px" />
+                    <span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:12px;color:var(--tx3);pointer-events:none">%</span>
+                  </div>
+                  <div style="font-size:11px;color:var(--tx3);line-height:1.5">Markup added on top of mid-market rate</div>
                 </div>
               </div>`).join('')}
         </div>

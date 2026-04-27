@@ -280,9 +280,15 @@ function renderCoverage() {
     if (partners && partners.length > 0) {
       path.style.fill   = '#f4a261';
       path.style.cursor = 'pointer';
-      path.addEventListener('mouseenter', e => showMapTooltip(e, countryName, partners));
-      path.addEventListener('mousemove',  e => moveMapTooltip(e));
-      path.addEventListener('mouseleave', hideMapTooltip);
+    path.addEventListener('mouseenter', e => {
+  path.style.fill = '#e8c547'; // hover color — change this to whatever you like
+  showMapTooltip(e, countryName, partners);
+});
+path.addEventListener('mousemove',  e => moveMapTooltip(e));
+path.addEventListener('mouseleave', () => {
+  path.style.fill = '#f4a261'; // restore original orange
+  hideMapTooltip();
+});
       path.addEventListener('click', () => {
         const flag = (window.ALL_COUNTRIES||[]).find(c => c.name === countryName)?.flag_emoji || '🌍';
         const fullPartners = partners.map(p => {
@@ -572,4 +578,325 @@ function moveMapTooltip(e) {
 function hideMapTooltip() {
   const tip = document.getElementById('map-tooltip');
   if (tip) tip.style.display = 'none';
+}
+/* ════════════════════════════════════════════════
+   COVERAGE EXPORTS — PDF + Excel
+   Matrix format: one country header, partners as rows,
+   tx types as columns, 4 rows per partner
+════════════════════════════════════════════════ */
+
+/* ── The 4 tx type columns shown in exports ── */
+const EXPORT_TX_COLS = ['Cash', 'Bank Transfer', 'Card', 'Mobile Wallet'];
+
+/* ── Format commission from commissions array ── */
+function formatCommForExport(commissions) {
+  if (!commissions || commissions.length === 0) return '—';
+  const general = commissions.find(cm => !cm.country_id) || commissions[0];
+  if (!general) return '—';
+  if (general.type === 'fixed')
+    return (general.value || '—') + ' ' + (general.currency || '') + ' / ' + (general.unit || '').replace(/_/g, ' ');
+  if (general.type === 'percentage')
+    return (general.value || '—') + '% / ' + (general.unit || '').replace(/_/g, ' ');
+  return '—';
+}
+
+/* ════════════════════════════════════════════════
+   PDF EXPORT
+════════════════════════════════════════════════ */
+async function exportCoveragePDF() {
+  showToast('⏳ Building PDF…');
+
+  const cos = window.ALL_COMPANIES || [];
+  const allCountries = window.ALL_COUNTRIES || [];
+
+  /* Build country → partners map */
+  const countryMap = {};
+  cos.forEach(c => {
+    (c.countries || []).forEach(co => {
+      if (!co.name) return;
+      if (!countryMap[co.name]) countryMap[co.name] = [];
+      if (!countryMap[co.name].find(p => p.id === c.id)) {
+        countryMap[co.name].push({ company: c, link: co });
+      }
+    });
+  });
+
+  /* Load commissions for all companies */
+  const commMap = {};
+  await Promise.all(cos.map(async c => {
+    try { commMap[c.id] = await dbGetCommissions(c.id); } catch(e) { commMap[c.id] = []; }
+  }));
+
+  const coveredNames  = Object.keys(countryMap).sort();
+  const uncoveredNames = allCountries.filter(c => !countryMap[c.name]).map(c => c.name).sort();
+
+  const date = new Date().toLocaleDateString('en-GB', { day:'2-digit', month:'long', year:'numeric' });
+
+  function buildCountryBlock(countryName) {
+    const flag    = allCountries.find(c => c.name === countryName)?.flag_emoji || '🌍';
+    const entries = countryMap[countryName] || [];
+
+    const headerRow = `
+      <tr style="background:#1A3A6B;color:white">
+        <th style="padding:6px 10px;text-align:left;font-size:10px;width:18%">Partner</th>
+        ${EXPORT_TX_COLS.map(t => `<th style="padding:6px 10px;text-align:center;font-size:10px">${t}</th>`).join('')}
+      </tr>`;
+
+    const partnerRows = entries.map((entry, i) => {
+      const c    = entry.company;
+      const link = entry.link;
+      const txs  = link.transactions || [];
+      const bg   = i % 2 === 0 ? '#fff' : '#f9f9fc';
+      const comms = commMap[c.id] || [];
+      const feeStr = formatCommForExport(comms);
+
+      /* Row 1: currencies */
+      const curRow = EXPORT_TX_COLS.map(col => {
+        const tx = txs.find(t => t.txType === col);
+        if (!tx || !tx.currencies?.length) return `<td style="padding:4px 8px;border:1px solid #e0e0e0;background:#f5f5f5"></td>`;
+        return `<td style="padding:4px 8px;border:1px solid #e0e0e0;text-align:center;background:#c8f0d0;font-size:10px;font-weight:700;color:#1a5c2a">${tx.currencies.join(' / ')}</td>`;
+      }).join('');
+
+      /* Row 2: segments */
+      const segRow = EXPORT_TX_COLS.map(col => {
+        const tx = txs.find(t => t.txType === col);
+        if (!tx || !tx.segments?.length) return `<td style="padding:4px 8px;border:1px solid #e0e0e0;background:#f5f5f5"></td>`;
+        return `<td style="padding:4px 8px;border:1px solid #e0e0e0;text-align:center;font-size:9px;color:#555">${tx.segments.join(' / ')}</td>`;
+      }).join('');
+
+      /* Row 3: fee (spans all tx cols) */
+      const feeRow = `<td colspan="${EXPORT_TX_COLS.length}" style="padding:4px 10px;border:1px solid #e0e0e0;text-align:center;font-size:9px;color:#888;background:#fffde7">Fee: <strong style="color:#1A3A6B">${feeStr}</strong></td>`;
+
+      /* Row 4: FX fee */
+      const fxFees = [...new Set(txs.filter(t => t.fxFee != null).map(t => t.fxFee + '%'))];
+      const fxStr  = fxFees.length ? fxFees.join(' / ') : '—';
+      const fxRow  = `<td colspan="${EXPORT_TX_COLS.length}" style="padding:4px 10px;border:1px solid #e0e0e0;text-align:center;font-size:9px;color:#888;background:#fff8e1">FX: <strong style="color:#f0a832">${fxStr}</strong></td>`;
+
+      const statusColor = c.partnership_status === 'Active' ? '#22c97a' : c.partnership_status === 'In Progress' ? '#f0a832' : '#999';
+      const nameBg = `background:#f0f4ff`;
+
+      return `
+        <tr style="background:${bg}">
+          <td rowspan="4" style="padding:6px 10px;border:1px solid #e0e0e0;font-weight:700;color:#1A3A6B;vertical-align:middle;text-align:center;${nameBg};font-size:11px">
+            ${c.name}
+            <div style="font-size:9px;color:${statusColor};margin-top:2px">${c.partnership_status || c.relationship_status || ''}</div>
+          </td>
+          ${curRow}
+        </tr>
+        <tr style="background:${bg}">${segRow}</tr>
+        <tr>${feeRow}</tr>
+        <tr>${fxRow}</tr>`;
+    }).join('');
+
+    return `
+      <div style="margin-bottom:18px;page-break-inside:avoid">
+        <div style="background:#f0a832;padding:7px 14px;font-weight:800;font-size:13px;color:#1A3A6B;border-radius:4px 4px 0 0;text-align:center">
+          ${flag} ${countryName}
+          <span style="font-size:10px;font-weight:400;margin-left:8px;color:#5a3d00">${entries.length} partner${entries.length !== 1 ? 's' : ''}</span>
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-family:Arial,sans-serif">
+          <thead>${headerRow}</thead>
+          <tbody>${partnerRows}</tbody>
+        </table>
+      </div>`;
+  }
+
+  const countryBlocks = coveredNames.map(buildCountryBlock).join('');
+
+  const uncoveredGrid = uncoveredNames.length ? `
+    <div style="margin-top:20px;page-break-inside:avoid">
+      <div style="background:#888;padding:6px 14px;font-weight:700;font-size:11px;color:white;border-radius:4px;text-align:center;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">
+        Opportunity Markets — No Partners Yet (${uncoveredNames.length})
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px">
+        ${uncoveredNames.map(n => {
+          const flag = allCountries.find(c => c.name === n)?.flag_emoji || '🌍';
+          return `<div style="background:#f5f5f5;border-radius:4px;padding:5px 8px;font-size:10px;color:#666">${flag} ${n}</div>`;
+        }).join('')}
+      </div>
+    </div>` : '';
+
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>Coverage Summary — Payporter</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Arial,sans-serif;color:#1A1A2E;background:#fff;padding:10mm 12mm;font-size:12px}
+  @media print{body{padding:8mm 10mm}}
+</style>
+</head><body>
+
+<div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;margin-bottom:14px;border-bottom:3px solid #1A3A6B">
+  <div style="display:flex;align-items:center;gap:10px">
+    <div style="width:32px;height:32px;background:#2E5BBA;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;color:white">FI</div>
+    <div>
+      <div style="font-size:17px;font-weight:800;color:#1A3A6B">Coverage Summary Report</div>
+      <div style="font-size:10px;color:#666">FI Tracker — Payporter</div>
+    </div>
+  </div>
+  <div style="text-align:right;font-size:10px">
+    <div style="font-weight:700;color:#1A3A6B">Generated: ${date}</div>
+    <div style="color:#E53935;font-weight:700;margin-top:2px">CONFIDENTIAL — INTERNAL USE ONLY</div>
+  </div>
+</div>
+
+<div style="display:flex;gap:10px;margin-bottom:16px">
+  ${[
+    [coveredNames.length, 'Countries with Partners', '#22c97a'],
+    [uncoveredNames.length, 'No Coverage', '#999'],
+    [Math.round(coveredNames.length / (allCountries.length || 1) * 100) + '%', 'Coverage Rate', '#2E5BBA'],
+    [cos.length, 'Total Partners', '#f0a832']
+  ].map(([v,l,c]) => `
+    <div style="flex:1;background:#EEF2FB;border-left:3px solid ${c};border-radius:4px;padding:8px 12px">
+      <div style="font-size:20px;font-weight:800;color:#1A3A6B">${v}</div>
+      <div style="font-size:10px;color:#666;margin-top:1px">${l}</div>
+    </div>`).join('')}
+</div>
+
+${countryBlocks}
+${uncoveredGrid}
+
+<div style="margin-top:16px;padding-top:8px;border-top:1px solid #eee;display:flex;justify-content:space-between;font-size:9px;color:#999">
+  <span>FI Tracker — Payporter · Coverage Summary Report</span>
+  <span>© Payporter 2026 — All Rights Reserved</span>
+</div>
+
+<script>window.onload=()=>window.print()<\/script>
+</body></html>`;
+
+  const win = window.open('', '_blank');
+  if (!win) { showToast('⚠️ Please allow popups'); return; }
+  win.document.write(html);
+  win.document.close();
+}
+
+/* ════════════════════════════════════════════════
+   EXCEL EXPORT (SheetJS)
+════════════════════════════════════════════════ */
+async function exportCoverageExcel() {
+  showToast('⏳ Building Excel…');
+
+  if (typeof XLSX === 'undefined') {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    document.head.appendChild(s);
+    await new Promise(r => s.onload = r);
+  }
+
+  const cos = window.ALL_COMPANIES || [];
+  const allCountries = window.ALL_COUNTRIES || [];
+
+  /* Load commissions */
+  const commMap = {};
+  await Promise.all(cos.map(async c => {
+    try { commMap[c.id] = await dbGetCommissions(c.id); } catch(e) { commMap[c.id] = []; }
+  }));
+
+  /* Build country map */
+  const countryMap = {};
+  cos.forEach(c => {
+    (c.countries || []).forEach(co => {
+      if (!co.name) return;
+      if (!countryMap[co.name]) countryMap[co.name] = [];
+      if (!countryMap[co.name].find(p => p.id === c.id))
+        countryMap[co.name].push({ company: c, link: co });
+    });
+  });
+
+  const coveredNames   = Object.keys(countryMap).sort();
+  const uncoveredNames = allCountries.filter(c => !countryMap[c.name]).map(c => c.name).sort();
+
+  /* ── Sheet 1: Coverage Matrix ── */
+  const wb   = XLSX.utils.book_new();
+  const ws1  = {};
+  let row = 0;
+
+  const setCell = (r, c, v, style) => {
+    const addr = XLSX.utils.encode_cell({ r, c });
+    ws1[addr] = { v, t: typeof v === 'number' ? 'n' : 's' };
+  };
+
+  const merges = [];
+
+  coveredNames.forEach(countryName => {
+    const flag    = allCountries.find(c => c.name === countryName)?.flag_emoji || '';
+    const entries = countryMap[countryName] || [];
+
+    /* Country header — merged across all columns */
+    setCell(row, 0, `${flag} ${countryName.toUpperCase()}`);
+    merges.push({ s: { r: row, c: 0 }, e: { r: row, c: EXPORT_TX_COLS.length } });
+    row++;
+
+    /* Column headers */
+    setCell(row, 0, 'Partner');
+    EXPORT_TX_COLS.forEach((col, ci) => setCell(row, ci + 1, col));
+    row++;
+
+    /* Partner rows */
+    entries.forEach(entry => {
+      const c    = entry.company;
+      const link = entry.link;
+      const txs  = link.transactions || [];
+      const comms = commMap[c.id] || [];
+      const feeStr = formatCommForExport(comms);
+      const fxFees = [...new Set(txs.filter(t => t.fxFee != null).map(t => t.fxFee + '%'))];
+      const fxStr  = fxFees.length ? fxFees.join(' / ') : '—';
+      const partnerStartRow = row;
+
+      /* Row 1: currencies */
+      setCell(row, 0, c.name);
+      EXPORT_TX_COLS.forEach((col, ci) => {
+        const tx = txs.find(t => t.txType === col);
+        setCell(row, ci + 1, tx?.currencies?.join(' / ') || '');
+      });
+      row++;
+
+      /* Row 2: segments */
+      setCell(row, 0, '');
+      EXPORT_TX_COLS.forEach((col, ci) => {
+        const tx = txs.find(t => t.txType === col);
+        setCell(row, ci + 1, tx?.segments?.join(' / ') || '');
+      });
+      row++;
+
+      /* Row 3: fee — spans all tx cols */
+      setCell(row, 0, '');
+      setCell(row, 1, 'Fee: ' + feeStr);
+      merges.push({ s: { r: row, c: 1 }, e: { r: row, c: EXPORT_TX_COLS.length } });
+      row++;
+
+      /* Row 4: FX fee — spans all tx cols */
+      setCell(row, 0, '');
+      setCell(row, 1, 'FX: ' + fxStr);
+      merges.push({ s: { r: row, c: 1 }, e: { r: row, c: EXPORT_TX_COLS.length } });
+      row++;
+
+      /* Merge partner name vertically across 4 rows */
+      merges.push({ s: { r: partnerStartRow, c: 0 }, e: { r: row - 1, c: 0 } });
+
+      /* Empty separator row */
+      row++;
+    });
+
+    /* Empty row between countries */
+    row++;
+  });
+
+  ws1['!ref']   = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: row, c: EXPORT_TX_COLS.length } });
+  ws1['!merges'] = merges;
+  ws1['!cols']  = [{ wch: 22 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 18 }];
+  XLSX.utils.book_append_sheet(wb, ws1, 'Coverage Matrix');
+
+  /* ── Sheet 2: Opportunity Markets ── */
+  const ws2data = [['Country', 'Flag', 'Status']];
+  uncoveredNames.forEach(n => {
+    const flag = allCountries.find(c => c.name === n)?.flag_emoji || '';
+    ws2data.push([n, flag, 'No partners yet']);
+  });
+  const ws2 = XLSX.utils.aoa_to_sheet(ws2data);
+  ws2['!cols'] = [{ wch: 30 }, { wch: 8 }, { wch: 20 }];
+  XLSX.utils.book_append_sheet(wb, ws2, 'Opportunity Markets');
+
+  const date = new Date().toISOString().slice(0,10);
+  XLSX.writeFile(wb, `Coverage_Matrix_${date}.xlsx`);
+  showToast('✓ Excel downloaded');
 }
